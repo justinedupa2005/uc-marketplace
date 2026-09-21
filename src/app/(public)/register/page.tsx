@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 
+import { redirectAuthenticatedUser } from "@/lib/auth/server";
+
 import { RegisterForm } from "./register-form";
 
 export const metadata: Metadata = {
@@ -9,7 +11,9 @@ export const metadata: Metadata = {
   description: "Create your UC Exchange account.",
 };
 
-export default function RegisterPage() {
+export default async function RegisterPage() {
+  await redirectAuthenticatedUser();
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#f9f9ff] px-5 py-10 text-[#121c2a]">
       <section className="w-full max-w-md rounded-2xl border border-[#c4c5d5]/70 bg-white p-6 shadow-[0_16px_50px_rgba(0,37,118,0.08)] sm:p-9">

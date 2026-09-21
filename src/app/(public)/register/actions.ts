@@ -1,37 +1,11 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { z } from "zod";
 
+import { getAppUrl } from "@/lib/auth/app-url";
+import { usesCodeConfirmation } from "@/lib/auth/confirmation-mode";
+import { registrationSchema } from "@/lib/auth/validation";
 import { createClient } from "@/lib/supabase/server";
-
-const passwordSchema = z
-  .string()
-  .min(12, "Password must contain at least 12 characters.")
-  .max(256, "Password is too long.")
-  .regex(/[a-z]/, "Password must include a lowercase letter.")
-  .regex(/[A-Z]/, "Password must include an uppercase letter.")
-  .regex(/[0-9]/, "Password must include a number.")
-  .regex(/[^A-Za-z0-9]/, "Password must include a symbol.");
-
-const registrationSchema = z.object({
-  fullName: z
-    .string()
-    .trim()
-    .min(2, "Enter your full name.")
-    .max(100, "Your name is too long."),
-  email: z
-    .string()
-    .trim()
-    .email("Enter a valid email address.")
-    .max(254, "Email address is too long.")
-    .transform((email) => email.toLowerCase()),
-  password: passwordSchema,
-  confirmPassword: z.string().max(256, "Password confirmation is too long."),
-}).refine(({ password, confirmPassword }) => password === confirmPassword, {
-  message: "Passwords do not match.",
-  path: ["confirmPassword"],
-});
 
 export type RegistrationState = {
   message: string | null;
@@ -61,7 +35,7 @@ function getRegistrationError(code: string | undefined) {
     case "validation_failed":
       return "Check your registration details and try again.";
     case "unexpected_failure":
-      return "Supabase could not save the account. Check the project Auth logs for the database error.";
+      return "Registration could not be completed. This email or student ID may already be associated with an account.";
     default:
       return "Registration was unsuccessful. Please try again.";
   }
@@ -73,6 +47,9 @@ export async function register(
 ): Promise<RegistrationState> {
   const result = registrationSchema.safeParse({
     fullName: formData.get("fullName"),
+    studentIdNumber: formData.get("studentIdNumber"),
+    course: formData.get("course"),
+    yearLevel: formData.get("yearLevel"),
     email: formData.get("email"),
     password: formData.get("password"),
     confirmPassword: formData.get("confirmPassword"),
@@ -86,22 +63,30 @@ export async function register(
     };
   }
 
-  const { fullName, email, password } = result.data;
-  const appUrl = (
-    process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
-  ).replace(/\/$/, "");
-  const supabase = await createClient();
-  let requiresEmailConfirmation = true;
-
+  const {
+    fullName,
+    studentIdNumber,
+    course,
+    yearLevel,
+    email,
+    password,
+  } = result.data;
+  const codeMode = usesCodeConfirmation();
   try {
+    const supabase = await createClient();
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: {
           full_name: fullName,
+          student_id_number: studentIdNumber,
+          course,
+          year_level: yearLevel,
         },
-        emailRedirectTo: `${appUrl}/auth/confirm`,
+        ...(!codeMode && {
+          emailRedirectTo: `${getAppUrl()}/auth/confirm`,
+        }),
       },
     });
 
@@ -115,12 +100,14 @@ export async function register(
       return { message: getRegistrationError(error.code) };
     }
 
-    requiresEmailConfirmation = data.session === null;
-
-    // When email confirmation is disabled, signUp creates a session. The
-    // requested flow sends all new users to Login, so clear that session.
+    // Email confirmation must be enabled in Supabase for code verification.
+    // A session here means Auth accepted the signup without a code.
     if (data.session) {
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: "local" });
+      return {
+        message:
+          "Email verification is unavailable right now. Please contact support before signing in.",
+      };
     }
   } catch {
     return {
@@ -128,9 +115,5 @@ export async function register(
     };
   }
 
-  redirect(
-    requiresEmailConfirmation
-      ? "/login?registered=check-email"
-      : "/login?registered=ready",
-  );
+  redirect("/register/check-email");
 }

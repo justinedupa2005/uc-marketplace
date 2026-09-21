@@ -34,6 +34,12 @@ const authSecurityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  experimental: {
+    serverActions: {
+      // The verification form accepts a 5 MiB ID image plus multipart overhead.
+      bodySizeLimit: "6mb",
+    },
+  },
   images: {
     remotePatterns: supabaseUrl
       ? [
@@ -46,10 +52,19 @@ const nextConfig: NextConfig = {
       : [],
   },
   async headers() {
-    return ["/login", "/register", "/auth/confirm"].map((source) => ({
-      source,
-      headers: authSecurityHeaders,
-    }));
+    return [
+      "/login",
+      "/register",
+      "/register/check-email",
+      "/register/resend-confirmation",
+      "/forgot-password",
+      "/reset-password",
+      "/account-status",
+      "/verification",
+      "/admin/:path*",
+      "/auth/confirm",
+      "/auth/recovery",
+    ].map((source) => ({ source, headers: authSecurityHeaders }));
   },
 };
 

@@ -1,0 +1,51 @@
+export const COURSE_OPTIONS = [
+  { value: "AB-EL", label: "BA in English Language" },
+  { value: "AB-LIT", label: "BA in Literature" },
+  { value: "BPA", label: "Bachelor of Performing Arts" },
+  { value: "AB-POLS", label: "BA in Political Science" },
+  { value: "AB-PSYCH", label: "BA in Psychology" },
+  { value: "BSA", label: "BS in Accountancy" },
+  { value: "BSBA-FM", label: "BSBA - Financial Management" },
+  { value: "BSBA-HRM", label: "BSBA - Human Resource Management" },
+  { value: "BSBA-MM", label: "BSBA - Marketing Management" },
+  { value: "BSBA-OM", label: "BSBA - Operations Management" },
+  { value: "BSMA", label: "BS in Management Accounting" },
+  { value: "BSOA", label: "BS in Office Administration" },
+  { value: "BSREM", label: "BS in Real Estate Management" },
+  { value: "BSCRIM", label: "BS in Criminology" },
+  { value: "BSCA", label: "BS in Customs Administration" },
+  { value: "BEED", label: "Bachelor of Elementary Education" },
+  { value: "BPED", label: "Bachelor of Physical Education" },
+  { value: "BSED-ENGLISH", label: "BSEd - English" },
+  { value: "BSED-FILIPINO", label: "BSEd - Filipino" },
+  { value: "BSED-MATH", label: "BSEd - Mathematics" },
+  { value: "BSED-SCIENCE", label: "BSEd - Science" },
+  { value: "BSED-SOCSTUD", label: "BSEd - Social Studies" },
+  { value: "BSNED", label: "BS in Special Needs Education" },
+  { value: "BSCE", label: "BS in Civil Engineering" },
+  { value: "BSCPE", label: "BS in Computer Engineering" },
+  { value: "BSECE", label: "BS in Electronics Engineering" },
+  { value: "BSEE", label: "BS in Electrical Engineering" },
+  { value: "BSIE", label: "BS in Industrial Engineering" },
+  { value: "BSME", label: "BS in Mechanical Engineering" },
+  { value: "BSHM", label: "BS in Hospitality Management" },
+  { value: "ACT", label: "Associate in Computer Technology" },
+  { value: "BSCS", label: "BS in Computer Science" },
+  { value: "BSCSAI", label: "BS in Computer Science - Artificial Intelligence" },
+  { value: "BSIT", label: "BS in Information Technology" },
+  { value: "BSN", label: "BS in Nursing" },
+  { value: "BSSW", label: "BS in Social Work" },
+  { value: "OTHER", label: "Other UC Main program" },
+] as const;
+
+export const YEAR_LEVEL_OPTIONS = [
+  { value: "1", label: "1st Year" },
+  { value: "2", label: "2nd Year" },
+  { value: "3", label: "3rd Year" },
+  { value: "4", label: "4th Year" },
+  { value: "5", label: "5th Year" },
+] as const;
+
+export function isAcceptedCourse(value: string) {
+  return COURSE_OPTIONS.some((course) => course.value === value);
+}

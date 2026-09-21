@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 
 import { FormNotification } from "@/components/form-notification";
@@ -10,7 +11,11 @@ const initialLoginState: LoginState = {
   message: null,
 };
 
-export function LoginForm() {
+type LoginFormProps = {
+  nextPath: string;
+};
+
+export function LoginForm({ nextPath }: LoginFormProps) {
   const [state, formAction, pending] = useActionState(
     login,
     initialLoginState,
@@ -18,6 +23,8 @@ export function LoginForm() {
 
   return (
     <form action={formAction} className="mt-7 space-y-5">
+      <input type="hidden" name="next" value={nextPath} />
+
       <label className="block" htmlFor="email">
         <span className="mb-2 block text-sm font-semibold">Email address</span>
         <input
@@ -48,6 +55,15 @@ export function LoginForm() {
           className="h-12 w-full rounded-md border border-[#c4c5d5] px-4 outline-none transition focus:border-[#0038a8] focus:ring-2 focus:ring-[#0038a8]/15 disabled:cursor-wait disabled:bg-[#f2f3f8]"
         />
       </label>
+
+      <div className="-mt-2 text-right">
+        <Link
+          href="/forgot-password"
+          className="text-sm font-semibold text-[#0038a8] hover:underline"
+        >
+          Forgot password?
+        </Link>
+      </div>
 
       {state.message && (
         <div id="login-error">
