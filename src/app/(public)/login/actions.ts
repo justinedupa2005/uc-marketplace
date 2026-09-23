@@ -4,6 +4,10 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import {
+  getAuthorizedDestination,
+  parseAuthorizationProfile,
+} from "@/lib/auth/authorization";
 import { getSafeNextPath } from "@/lib/auth/redirects";
 import { RECOVERY_COOKIE_NAME } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
@@ -73,13 +77,26 @@ export async function login(
 
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("account_status, verification_status")
+      .select("role, account_status, verification_status")
       .eq("id", user.id)
       .maybeSingle();
 
-    if (profileError || !profile) {
+    if (profileError) {
+      console.error("Unable to load the login profile", {
+        code: profileError.code,
+      });
+      await supabase.auth.signOut({ scope: "local" });
+      return {
+        message:
+          "We couldn't check your account permissions. Please try logging in again shortly.",
+      };
+    }
+
+    const authorizationProfile = parseAuthorizationProfile(profile);
+
+    if (!authorizationProfile) {
       console.error("Unable to validate the login profile", {
-        code: profileError?.code,
+        reason: profile ? "invalid" : "missing",
       });
       await supabase.auth.signOut({ scope: "local" });
       return {
@@ -88,7 +105,7 @@ export async function login(
       };
     }
 
-    if (profile.account_status === "disabled") {
+    if (authorizationProfile.account_status === "disabled") {
       await supabase.auth.signOut({ scope: "local" });
       return {
         message:
@@ -96,14 +113,10 @@ export async function login(
       };
     }
 
-    if (profile.account_status === "suspended") {
-      redirectTo = "/account-status";
-    } else if (profile.account_status !== "active") {
-      await supabase.auth.signOut({ scope: "local" });
-      return {
-        message: "This account is not available for marketplace access.",
-      };
-    }
+    redirectTo = getAuthorizedDestination(
+      authorizationProfile,
+      destination,
+    );
 
     const cookieStore = await cookies();
     cookieStore.delete(RECOVERY_COOKIE_NAME);

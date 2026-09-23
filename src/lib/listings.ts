@@ -1,5 +1,7 @@
+import "server-only";
+
 import type { MarketplaceProduct } from "@/components/product-card";
-import { createClient } from "@/lib/supabase/server";
+import { requireVerifiedActiveStudent } from "@/lib/auth/authorization";
 
 type ListingImageRow = {
   storage_path: string;
@@ -30,6 +32,18 @@ const priceFormatter = new Intl.NumberFormat("en-PH", {
   minimumFractionDigits: 2,
 });
 
+const LISTING_IMAGE_URL_LIFETIME_SECONDS = 5 * 60;
+
+export type MarketplaceListingsResult =
+  | {
+      products: MarketplaceProduct[];
+      error: null;
+    }
+  | {
+      products: [];
+      error: "unavailable";
+    };
+
 function getCoverImage(images: ListingImageRow[] | null) {
   if (!images?.length) {
     return null;
@@ -44,8 +58,8 @@ function getCoverImage(images: ListingImageRow[] | null) {
   })[0];
 }
 
-export async function getMarketplaceListings(): Promise<MarketplaceProduct[]> {
-  const supabase = await createClient();
+export async function getMarketplaceListings(): Promise<MarketplaceListingsResult> {
+  const { supabase } = await requireVerifiedActiveStudent("/marketplace");
   const { data, error } = await supabase
     .from("listings")
     .select(
@@ -68,20 +82,44 @@ export async function getMarketplaceListings(): Promise<MarketplaceProduct[]> {
 
   if (error) {
     if (error.code !== "PGRST205") {
-      console.warn("Unable to load marketplace listings:", error.message);
+      console.warn("Unable to load marketplace listings", { code: error.code });
     }
 
-    return [];
+    return { products: [], error: "unavailable" };
   }
 
-  return ((data ?? []) as ListingRow[]).map((listing) => {
-    const coverImage = getCoverImage(listing.listing_images);
-    const image = coverImage
-      ? /^https?:\/\//i.test(coverImage.storage_path)
-        ? coverImage.storage_path
-        : supabase.storage.from("listing-images").getPublicUrl(coverImage.storage_path).data
-            .publicUrl
-      : null;
+  const listings = (data ?? []) as ListingRow[];
+  const coverPaths = [
+    ...new Set(
+      listings
+        .map((listing) => getCoverImage(listing.listing_images)?.storage_path)
+        .filter(
+          (path): path is string =>
+            Boolean(path) && !/^https?:\/\//i.test(path ?? ""),
+        ),
+    ),
+  ];
+  const signedImageUrls = new Map<string, string>();
+
+  if (coverPaths.length > 0) {
+    const { data: signedImages, error: signedImageError } = await supabase.storage
+      .from("listing-images")
+      .createSignedUrls(coverPaths, LISTING_IMAGE_URL_LIFETIME_SECONDS);
+
+    if (signedImageError) {
+      console.warn("Unable to create private listing image URLs");
+    } else {
+      signedImages.forEach((signedImage) => {
+        if (signedImage.path && signedImage.signedUrl && !signedImage.error) {
+          signedImageUrls.set(signedImage.path, signedImage.signedUrl);
+        }
+      });
+    }
+  }
+
+  const products: MarketplaceProduct[] = listings.map((listing) => {
+    const coverPath = getCoverImage(listing.listing_images)?.storage_path;
+    const image = coverPath ? (signedImageUrls.get(coverPath) ?? null) : null;
 
     return {
       id: listing.id,
@@ -93,4 +131,6 @@ export async function getMarketplaceListings(): Promise<MarketplaceProduct[]> {
       imageAlt: listing.title,
     };
   });
+
+  return { products, error: null };
 }

@@ -6,6 +6,8 @@ const PROTECTED_ROUTE_ROOTS = [
   "/profile",
   "/messages",
   "/my-listings",
+  "/listings",
+  "/notifications",
   "/verification",
   "/admin",
 ] as const;

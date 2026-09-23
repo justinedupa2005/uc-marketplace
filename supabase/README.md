@@ -23,13 +23,24 @@ Apply migrations in filename order:
    - Makes verification submission an authenticated database RPC, stores a
      profile snapshot atomically with the pending transition, tightens private
      Storage access and the 5 MiB image limit, and hardens admin review.
+5. `20260921000000_strengthen_marketplace_authorization.sql`
+   - Limits listing and seller-profile reads to verified active students or
+     active administrators, removes older permissive policies, makes
+     `listing-images` private, and enforces live ownership/status checks for
+     image metadata and Storage objects.
+6. `20260922000000_complete_authorization_hardening.sql`
+   - Adds restrictive identity/verification gates, makes the complete allowed
+     row set part of restrictive marketplace policies, prevents sellers from
+     reversing or erasing administrator removals, and reasserts least-privilege
+     grants for protected tables and RPCs.
 
 ## Applying these migrations to another project
 
 In the linked UC Marketplace project, migration 1 was applied manually and its
 CLI history was repaired after checking the remote schema. Migrations 2-4 were
-applied through the CLI on 2026-09-20. All four are recorded as applied; do not
-run them again in this project.
+applied through the CLI on 2026-09-20, migration 5 on 2026-09-21, and migration
+6 on 2026-09-22. Applied migrations recorded in remote history must not be
+edited or run again; add a new forward-only migration for later changes.
 
 For another project where migration 1 was already applied manually, first
 verify its schema and repair its migration history. Then apply the remaining
@@ -124,12 +135,63 @@ through SQL Editor: SQL Editor's privileged role bypasses normal RLS.
   `year_level`; the trigger ignores any client-supplied role or status values.
 - Existing users cannot create or modify listings until an administrator marks
   them verified through the verification workflow.
-- Unverified active users can still browse marketplace listings.
+- Unverified, pending, rejected, and suspended users cannot browse marketplace
+  listings; they retain only the profile/verification or restricted-account
+  access allowed by the application.
 - Listings belonging to suspended, disabled, or unverified sellers are hidden
   from the marketplace Data API.
 - Student verification documents use the private path
   `<user-id>/<verification-id>/student-id.<extension>`.
 - Avatars use `<user-id>/avatar.<extension>`.
+
+## Apply Step 5 marketplace authorization
+
+Run `checks/marketplace_authorization_preflight.sql` before applying migration
+5. Its three image-integrity counts should be zero. Then apply
+`20260921000000_strengthen_marketplace_authorization.sql` and run
+`checks/marketplace_authorization_security.sql`; every named check should be
+`true`.
+
+The `listing-images` bucket is private after Step 5. Store only the object path
+in `listing_images.storage_path` and deliver files through an authenticated
+download or a short-lived signed URL. The application currently creates
+five-minute signed URLs after independently confirming a verified, active
+student session. Do not restore public bucket access or use `getPublicUrl()`.
+
+Catalog checks cannot substitute for user-scoped RLS testing. Test with an
+anonymous request, pending/rejected student, verified active student, suspended
+student with an existing session, and active administrator. Confirm direct Data
+API listing reads, cross-owner listing changes, and cross-owner Storage writes
+are denied in addition to checking the browser redirects. Features whose tables
+or mutations do not yet exist (messages, notifications, favorites, and
+reservations) must receive the same live-profile checks when implemented.
+
+### Authorization rules for future marketplace tables
+
+Do not create these tables merely for authorization scaffolding. When each
+feature is implemented, its first migration and every related Server Action or
+Route Handler must enforce this matrix using the caller's live profile:
+
+| Feature | Required database authorization |
+| --- | --- |
+| Favorites | Verified active student; the row's `user_id` must equal `auth.uid()` for every read and mutation. |
+| Conversations | Verified active student; only listed participants may read the conversation, and only a participant may initiate allowed changes. |
+| Messages | Verified active student; sender must be `auth.uid()` and a current conversation participant; only participants may read. Suspension must immediately block sends. |
+| Reservations | Verified active student; buyer must be `auth.uid()`, the referenced listing must be eligible, and only the buyer or seller may read or perform explicitly allowed state transitions. |
+| Notifications | A user may read/update only their own delivery state. Ordinary students receive no direct INSERT grant for system or administrator notifications. |
+
+Keep administrative moderation policies/RPCs separate from student policies.
+An active administrator is not implicitly a marketplace buyer or seller.
+
+After migration 6, run `checks/authorization_hardening_security.sql`. It also
+fails when an unexpected permissive policy appears on a protected table, so a
+later broad `USING (true)` policy cannot silently widen access.
+
+Then run `checks/marketplace_authorization_rls_smoke.sql`. The matrix creates
+disposable Auth users for every student/admin authorization state, exercises
+the real `authenticated` role against profile, verification, listing, image,
+Storage, and moderation policies, deletes every fixture, and reports a compact
+`all_passed` result. It does not require or modify a real student account.
 
 ## Bootstrap the first administrator
 
@@ -184,7 +246,7 @@ ID or changing browser metadata does not grant administrator access.
 
 The Supabase CLI is installed as a development dependency and this repository
 has a local `supabase/config.toml`. The UC Marketplace project is linked, and
-all four migration versions are recorded as applied. Running SQL manually does
+all six migration versions are recorded as applied. Running SQL manually does
 not necessarily add entries to `supabase_migrations.schema_migrations`.
 
 On a new machine or for a different project, from the repository root run:

@@ -4,7 +4,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { logout } from "@/app/auth/actions";
-import { getValidatedUser, hasRecoveryMarker } from "@/lib/auth/server";
+import {
+  getAuthorizedDestination,
+  getCurrentAccessContext,
+} from "@/lib/auth/authorization";
+import { isAuthServiceUnavailable } from "@/lib/auth/errors";
+import { hasRecoveryMarker } from "@/lib/auth/server";
 
 export const metadata: Metadata = {
   title: "Account Status | UC Exchange",
@@ -12,24 +17,26 @@ export const metadata: Metadata = {
 };
 
 export default async function AccountStatusPage() {
-  const { supabase, user } = await getValidatedUser();
+  let access: Awaited<ReturnType<typeof getCurrentAccessContext>>;
+
+  try {
+    access = await getCurrentAccessContext();
+  } catch {
+    redirect("/login?auth=unavailable");
+  }
+
+  const { user, profile, error, profileIssue } = access;
 
   if (!user) {
-    redirect("/login");
+    redirect(isAuthServiceUnavailable(error) ? "/login?auth=unavailable" : "/login");
   }
 
   if (await hasRecoveryMarker(user.id)) {
     redirect("/reset-password");
   }
 
-  const { data: profile, error } = await supabase
-    .from("profiles")
-    .select("account_status")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (!error && profile?.account_status === "active") {
-    redirect("/marketplace");
+  if (profile?.account_status === "active") {
+    redirect(getAuthorizedDestination(profile));
   }
 
   const title =
@@ -37,6 +44,8 @@ export default async function AccountStatusPage() {
       ? "Your account is suspended"
       : profile?.account_status === "disabled"
         ? "Your account is disabled"
+        : profileIssue === "unavailable"
+          ? "Account status temporarily unavailable"
         : "Your account profile is unavailable";
 
   const description =
@@ -44,6 +53,8 @@ export default async function AccountStatusPage() {
       ? "Marketplace actions are unavailable while your account is suspended. Contact an administrator if you believe this is a mistake."
       : profile?.account_status === "disabled"
         ? "This account cannot access the marketplace. Contact an administrator if you need help."
+        : profileIssue === "unavailable"
+          ? "We couldn't check your current account permissions. Refresh this page or try again in a few minutes."
         : "We could not load the profile required for marketplace access. Contact support before trying again.";
 
   return (

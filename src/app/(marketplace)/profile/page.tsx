@@ -4,9 +4,12 @@ import Link from "next/link";
 
 import { logout } from "@/app/auth/actions";
 import { AppHeader } from "@/components/app-header";
-import { MobileNavigation } from "@/components/mobile-navigation";
+import {
+  getAuthorizedDestination,
+  isVerifiedActiveStudent,
+  requireActiveProfile,
+} from "@/lib/auth/authorization";
 import { COURSE_OPTIONS } from "@/lib/auth/options";
-import { getValidatedUser } from "@/lib/auth/server";
 
 export const metadata: Metadata = {
   title: "Profile | UC Marketplace",
@@ -15,6 +18,7 @@ export const metadata: Metadata = {
 
 const menuItems = [
   { label: "My Purchases", icon: "purchases.svg", href: "#purchases" },
+  { label: "Reservations", icon: "clock.svg", href: "/reservations" },
   { label: "Account Settings", icon: "account.svg", href: "#settings" },
   { label: "Notification Preferences", icon: "notifications.svg", href: "#notifications" },
   { label: "Help Center", icon: "help.svg", href: "#help" },
@@ -38,14 +42,45 @@ const verificationLabels: Record<string, string> = {
 };
 
 export default async function ProfilePage() {
-  const { supabase, user } = await getValidatedUser();
-  const { data: profile } = user
-    ? await supabase
-        .from("profiles")
-        .select("full_name, course, year_level, verification_status, role")
-        .eq("id", user.id)
-        .maybeSingle()
-    : { data: null };
+  const { supabase, user, profile: authorizationProfile } =
+    await requireActiveProfile("/profile");
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("full_name, course, year_level")
+    .eq("id", user.id)
+    .maybeSingle();
+  const hasMarketplaceAccess = isVerifiedActiveStudent(authorizationProfile);
+
+  if (profileError || !profile) {
+    return (
+      <div className="min-h-screen bg-[#f9f9ff] text-[#121c2a]">
+        {!hasMarketplaceAccess && (
+          <AppHeader
+            variant="back"
+            title="Profile"
+            backHref={getAuthorizedDestination(authorizationProfile)}
+            showLogout
+            showMarketplaceNavigation={false}
+          />
+        )}
+        <main className="mx-auto w-full max-w-2xl px-6 py-12">
+          <section className="rounded-xl border border-[#c4c5d5] bg-white p-7 text-center shadow-sm">
+            <h1 className="text-2xl font-bold">Profile temporarily unavailable</h1>
+            <p className="mt-3 text-sm leading-6 text-[#444653]">
+              We couldn&apos;t load your profile details right now. Please refresh
+              the page or try again later.
+            </p>
+            <Link
+              href="/profile"
+              className="mt-6 inline-flex min-h-11 items-center justify-center rounded-md bg-[#0038a8] px-5 text-sm font-semibold text-white hover:bg-[#002576]"
+            >
+              Try Again
+            </Link>
+          </section>
+        </main>
+      </div>
+    );
+  }
 
   const fullName =
     typeof profile?.full_name === "string"
@@ -65,30 +100,47 @@ export default async function ProfilePage() {
     course && yearLevel
       ? `${course} - ${yearLevel}`
       : course ?? yearLevel ?? "Student details not completed";
-  const verificationStatus = profile?.verification_status ?? "unverified";
+  const verificationStatus = authorizationProfile.verification_status;
   const verificationLabel =
-    profile?.role === "admin"
+    authorizationProfile.role === "admin"
       ? "Administrator"
       : (verificationLabels[verificationStatus] ?? "Verification Unavailable");
   const isVerified = verificationStatus === "verified";
-  const accountMenuItems = [
-    profile?.role === "admin"
+  const verificationMenuLabel =
+    verificationStatus === "pending"
+      ? "Verification Pending"
+      : verificationStatus === "rejected"
+        ? "Resubmit Verification"
+        : verificationStatus === "verified"
+          ? "Verification Status"
+          : "Verify Account";
+  const primaryAccountItem =
+    authorizationProfile.role === "admin"
       ? {
           label: "Review Verifications",
           icon: "account.svg",
           href: "/admin/verifications",
         }
       : {
-          label: "Student Verification",
+          label: verificationMenuLabel,
           icon: "account.svg",
           href: "/verification",
-        },
-    ...menuItems,
-  ];
+        };
+  const accountMenuItems = hasMarketplaceAccess
+    ? [primaryAccountItem, ...menuItems]
+    : [primaryAccountItem];
 
   return (
     <div className="min-h-screen bg-[#f9f9ff] text-[#121c2a]">
-      <AppHeader variant="back" title="Profile" />
+      {!hasMarketplaceAccess && (
+        <AppHeader
+          variant="back"
+          title="Profile"
+          backHref={getAuthorizedDestination(authorizationProfile)}
+          showLogout
+          showMarketplaceNavigation={false}
+        />
+      )}
 
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 pb-28 pt-8 md:pb-12">
         <section className="overflow-hidden rounded-xl border border-[#c4c5d5] bg-white shadow-sm">
@@ -160,8 +212,6 @@ export default async function ProfilePage() {
           </form>
         </nav>
       </main>
-
-      <MobileNavigation active="profile" />
     </div>
   );
 }

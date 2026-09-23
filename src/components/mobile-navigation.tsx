@@ -1,5 +1,8 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 type NavigationItem = "home" | "messages" | "sell" | "favorites" | "profile";
 
@@ -46,9 +49,11 @@ const items: Array<{
 ];
 
 export function MobileNavigation({
-  active = "home",
+  active,
   compact = false,
 }: MobileNavigationProps) {
+  const pathname = usePathname();
+
   return (
     <nav
       aria-label="Mobile navigation"
@@ -56,7 +61,9 @@ export function MobileNavigation({
     >
       <ul className="mx-auto flex max-w-[390px] items-stretch justify-between">
         {items.map((item) => {
-          const isActive = item.id === active;
+          const isCurrentPath =
+            pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const isActive = active ? item.id === active : isCurrentPath;
 
           return (
             <li key={item.href} className="flex flex-1 justify-center">

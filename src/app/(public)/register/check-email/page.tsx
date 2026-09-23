@@ -4,7 +4,7 @@ import Link from "next/link";
 
 import { FormNotification } from "@/components/form-notification";
 import { usesCodeConfirmation } from "@/lib/auth/confirmation-mode";
-import { redirectAuthenticatedUser } from "@/lib/auth/server";
+import { redirectAuthenticatedUser } from "@/lib/auth/authorization";
 
 import { CheckEmailForm } from "./check-email-form";
 

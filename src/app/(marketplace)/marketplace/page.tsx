@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { CategoryFilter } from "@/components/category-filter";
 import { FilterBar } from "@/components/filter-bar";
-import { MobileNavigation } from "@/components/mobile-navigation";
-import { Navbar } from "@/components/navbar";
 import { ProductCard } from "@/components/product-card";
 import { SearchBar } from "@/components/search-bar";
 import { getMarketplaceListings } from "@/lib/listings";
@@ -14,30 +13,49 @@ export const metadata: Metadata = {
 };
 
 export default async function MarketplacePage() {
-  const products = await getMarketplaceListings();
+  const { products, error } = await getMarketplaceListings();
 
   return (
     <div className="min-h-screen bg-[#f9f9ff] text-[#121c2a]">
-      <Navbar />
-
       <main className="mx-auto flex w-full max-w-[1200px] flex-col gap-4 px-6 py-4 pb-24 md:pb-10">
         <SearchBar />
         <CategoryFilter />
         <FilterBar />
 
-        <section aria-label="Recent marketplace listings">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-            {products.map((product) => (
-              <ProductCard key={product.id} product={product} />
-            ))}
-          </div>
-          {products.length === 0 && (
-            <p className="py-12 text-center text-sm text-[#444653]">No listings found.</p>
-          )}
-        </section>
+        {error ? (
+          <section
+            aria-live="polite"
+            className="rounded-xl border border-[#c4c5d5] bg-white px-6 py-10 text-center shadow-sm"
+          >
+            <h2 className="text-lg font-bold text-[#121c2a]">
+              Marketplace temporarily unavailable
+            </h2>
+            <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-[#444653]">
+              We couldn&apos;t load the listings right now. Your account data is
+              safe; wait a moment and try again.
+            </p>
+            <Link
+              href="/marketplace"
+              className="mt-5 inline-flex min-h-11 items-center justify-center rounded-md bg-[#0038a8] px-5 text-sm font-semibold text-white hover:bg-[#002576]"
+            >
+              Try Again
+            </Link>
+          </section>
+        ) : (
+          <section aria-label="Recent marketplace listings">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+              {products.map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </div>
+            {products.length === 0 && (
+              <p className="py-12 text-center text-sm text-[#444653]">
+                No listings found.
+              </p>
+            )}
+          </section>
+        )}
       </main>
-
-      <MobileNavigation />
     </div>
   );
 }

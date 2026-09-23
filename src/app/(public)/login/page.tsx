@@ -5,9 +5,9 @@ import { redirect } from "next/navigation";
 
 import { logout } from "@/app/auth/actions";
 import { FormNotification } from "@/components/form-notification";
+import { redirectAuthenticatedUser } from "@/lib/auth/authorization";
 import { usesCodeConfirmation } from "@/lib/auth/confirmation-mode";
 import { getSafeNextPath } from "@/lib/auth/redirects";
-import { redirectAuthenticatedUser } from "@/lib/auth/server";
 
 import { LoginForm } from "./login-form";
 
@@ -25,6 +25,7 @@ type LoginPageProps = {
     passwordUpdated?: string | string[];
     loggedOut?: string | string[];
     account?: string | string[];
+    auth?: string | string[];
     next?: string | string[];
   }>;
 };
@@ -62,13 +63,20 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const account = Array.isArray(params.account)
     ? params.account[0]
     : params.account;
+  const auth = Array.isArray(params.auth) ? params.auth[0] : params.auth;
   const rawNext = Array.isArray(params.next) ? params.next[0] : params.next;
   const nextPath = getSafeNextPath(rawNext);
 
   let notification: { variant: "error" | "success"; message: string } | null =
     null;
 
-  if (registered === "check-email") {
+  if (auth === "unavailable") {
+    notification = {
+      variant: "error",
+      message:
+        "We couldn't verify your session because the authentication service is temporarily unavailable. Please try again.",
+    };
+  } else if (registered === "check-email") {
     notification = {
       variant: "success",
       message: usesCodeConfirmation()

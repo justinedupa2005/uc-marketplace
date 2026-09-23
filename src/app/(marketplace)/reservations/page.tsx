@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 
-import { AppHeader } from "@/components/app-header";
-import { MobileNavigation } from "@/components/mobile-navigation";
 import { ReservationCard, type MockReservation } from "@/components/reservation-card";
+import { requireVerifiedActiveStudent } from "@/lib/auth/authorization";
 
 export const metadata: Metadata = {
   title: "Reservations | UC Marketplace",
@@ -32,11 +31,11 @@ const reservations: MockReservation[] = [
   },
 ];
 
-export default function ReservationsPage() {
+export default async function ReservationsPage() {
+  await requireVerifiedActiveStudent("/reservations");
+
   return (
     <div className="min-h-screen bg-[#f9f9ff] text-[#121c2a]">
-      <AppHeader />
-
       <main className="mx-auto w-full max-w-7xl px-6 pb-28 pt-10 md:pb-12">
         <header>
           <h1 className="text-3xl font-bold tracking-[-0.02em] text-[#002576] sm:text-4xl">
@@ -72,8 +71,6 @@ export default function ReservationsPage() {
           ))}
         </section>
       </main>
-
-      <MobileNavigation active="profile" />
     </div>
   );
 }

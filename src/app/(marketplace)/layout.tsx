@@ -2,8 +2,15 @@ import type { ReactNode } from "react";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { AccessRefresh } from "@/components/access-refresh";
+import { MobileNavigation } from "@/components/mobile-navigation";
+import { Navbar } from "@/components/navbar";
+import {
+  getAuthorizedDestination,
+  isVerifiedActiveStudent,
+  requireActiveProfile,
+} from "@/lib/auth/authorization";
 import { getSafeNextPath } from "@/lib/auth/redirects";
-import { getValidatedUser, hasRecoveryMarker } from "@/lib/auth/server";
 
 type MarketplaceLayoutProps = Readonly<{
   children: ReactNode;
@@ -12,27 +19,27 @@ type MarketplaceLayoutProps = Readonly<{
 export default async function MarketplaceLayout({
   children,
 }: MarketplaceLayoutProps) {
-  const { supabase, user } = await getValidatedUser();
+  const requestedPath = getSafeNextPath(
+    (await headers()).get("x-uc-marketplace-path"),
+  );
+  const access = await requireActiveProfile(requestedPath);
+  const authorizedDestination = getAuthorizedDestination(
+    access.profile,
+    requestedPath,
+  );
 
-  if (!user) {
-    const requestedPath = (await headers()).get("x-uc-marketplace-path");
-    const nextPath = getSafeNextPath(requestedPath);
-    redirect(`/login?next=${encodeURIComponent(nextPath)}`);
+  if (authorizedDestination !== requestedPath) {
+    redirect(authorizedDestination);
   }
 
-  if (await hasRecoveryMarker(user.id)) {
-    redirect("/reset-password");
-  }
+  const showMarketplaceNavigation = isVerifiedActiveStudent(access.profile);
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("account_status")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile || profile.account_status !== "active") {
-    redirect("/account-status");
-  }
-
-  return children;
+  return (
+    <>
+      <AccessRefresh />
+      {showMarketplaceNavigation && <Navbar />}
+      {children}
+      {showMarketplaceNavigation && <MobileNavigation />}
+    </>
+  );
 }

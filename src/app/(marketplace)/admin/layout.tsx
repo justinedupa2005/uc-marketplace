@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 
+import { logout } from "@/app/auth/actions";
+
 import { requireActiveAdmin } from "./verifications/admin-access";
 
 export default async function AdminLayout({
@@ -19,12 +21,14 @@ export default async function AdminLayout({
             <Link href="/admin/verifications" className="text-[#002576] hover:underline">
               Verifications
             </Link>
-            <Link href="/marketplace" className="text-[#444653] hover:text-[#002576]">
-              Marketplace
-            </Link>
             <Link href="/profile" className="text-[#444653] hover:text-[#002576]">
               Profile
             </Link>
+            <form action={logout}>
+              <button type="submit" className="font-semibold text-[#ba1a1a] hover:underline">
+                Log Out
+              </button>
+            </form>
           </nav>
         </div>
       </header>

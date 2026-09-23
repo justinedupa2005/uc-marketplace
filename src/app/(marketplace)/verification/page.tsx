@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
 import { AppHeader } from "@/components/app-header";
-import { MobileNavigation } from "@/components/mobile-navigation";
-import { getValidatedUser } from "@/lib/auth/server";
+import {
+  isVerifiedActiveStudent,
+  requireActiveStudent,
+} from "@/lib/auth/authorization";
 
 import { StudentInformation } from "./student-information";
 import { studentInformationSchema } from "./validation";
@@ -52,8 +53,9 @@ function StatusPanel({
 }
 
 export default async function VerificationPage() {
-  const { supabase, user } = await getValidatedUser();
-  if (!user) redirect("/login?next=/verification");
+  const { supabase, user, profile: authorizationProfile } =
+    await requireActiveStudent("/verification");
+  const hasMarketplaceAccess = isVerifiedActiveStudent(authorizationProfile);
 
   const [profileResult, latestResult] = await Promise.all([
     supabase
@@ -101,7 +103,15 @@ export default async function VerificationPage() {
 
   return (
     <div className="min-h-screen bg-[#f9f9ff] text-[#121c2a]">
-      <AppHeader variant="back" title="Student Verification" backHref="/profile" />
+      {!hasMarketplaceAccess && (
+        <AppHeader
+          variant="back"
+          title="Student Verification"
+          backHref="/profile"
+          showLogout
+          showMarketplaceNavigation={false}
+        />
+      )}
 
       <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-5 pb-28 pt-7 sm:px-6 sm:pt-10 md:pb-12">
         <header>
@@ -140,7 +150,7 @@ export default async function VerificationPage() {
               <StatusPanel
                 tone="blue"
                 title="Verification pending"
-                message="Your student verification has been submitted. Our administrators are reviewing your information. You can continue using the marketplace features available to unverified accounts."
+                message="Your student verification has been submitted. Our administrators are reviewing your information. Marketplace access will be available after approval."
               >
                 {submittedAt && (
                   <p className="mt-4 text-sm font-semibold">Submitted: {submittedAt}</p>
@@ -205,8 +215,6 @@ export default async function VerificationPage() {
           </>
         )}
       </main>
-
-      <MobileNavigation active="profile" />
     </div>
   );
 }

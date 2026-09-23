@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 
+import { isAuthServiceUnavailable } from "@/lib/auth/errors";
 import { getValidatedUser, hasRecoveryMarker } from "@/lib/auth/server";
 
 import { ResetPasswordForm } from "./reset-password-form";
@@ -17,12 +18,7 @@ export default async function ResetPasswordPage() {
 
   try {
     const { user, error } = await getValidatedUser();
-    authUnavailable = Boolean(
-      error &&
-        (error.status === 0 ||
-          error.code === "request_timeout" ||
-          error.name === "AuthRetryableFetchError"),
-    );
+    authUnavailable = isAuthServiceUnavailable(error);
     hasValidRecoveryState = Boolean(
       user && (await hasRecoveryMarker(user.id)),
     );

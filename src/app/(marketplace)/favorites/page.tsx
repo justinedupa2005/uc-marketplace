@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 
-import { AppHeader } from "@/components/app-header";
 import {
   FavoriteProductCard,
   type FavoriteProduct,
 } from "@/components/favorite-product-card";
-import { MobileNavigation } from "@/components/mobile-navigation";
+import { requireVerifiedActiveStudent } from "@/lib/auth/authorization";
 
 export const metadata: Metadata = {
   title: "Favorites | UC Marketplace",
@@ -47,11 +46,11 @@ const favorites: FavoriteProduct[] = [
   },
 ];
 
-export default function FavoritesPage() {
+export default async function FavoritesPage() {
+  await requireVerifiedActiveStudent("/favorites");
+
   return (
     <div className="min-h-screen bg-[#f9f9ff] text-[#121c2a]">
-      <AppHeader showMenu />
-
       <main className="mx-auto min-h-[calc(100vh-4rem)] w-full max-w-7xl px-6 pb-28 pt-12 md:pb-12">
         <header>
           <h1 className="text-2xl font-bold leading-8">Favorites</h1>
@@ -67,8 +66,6 @@ export default function FavoritesPage() {
           ))}
         </section>
       </main>
-
-      <MobileNavigation active="favorites" compact />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import {
   getSafeNextPath,
   isProtectedPathname,
 } from "@/lib/auth/redirects";
+import { isAuthServiceUnavailable } from "@/lib/auth/errors";
 
 function redirectWithSessionCookies(
   request: NextRequest,
@@ -81,16 +82,22 @@ export async function updateSession(request: NextRequest) {
   // Initializing auth here refreshes an expired session before Server
   // Components read it. Authorization is repeated close to protected data.
   let authenticated = false;
+  let authUnavailable = false;
 
   try {
     const { data, error } = await supabase.auth.getClaims();
     authenticated = Boolean(!error && data?.claims?.sub);
-  } catch {
-    // Malformed or unrecoverable session cookies are treated as logged out.
+    authUnavailable = isAuthServiceUnavailable(error);
+  } catch (error) {
+    authUnavailable = isAuthServiceUnavailable(error);
     authenticated = false;
   }
 
-  if (isProtectedPathname(request.nextUrl.pathname) && !authenticated) {
+  if (
+    isProtectedPathname(request.nextUrl.pathname) &&
+    !authenticated &&
+    !authUnavailable
+  ) {
     return redirectWithSessionCookies(request, supabaseResponse);
   }
 

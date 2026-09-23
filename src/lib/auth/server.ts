@@ -1,7 +1,6 @@
 import "server-only";
 
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 
@@ -70,42 +69,4 @@ export async function hasRecoveryMarker(userId: string) {
   } catch {
     return false;
   }
-}
-
-export async function redirectAuthenticatedUser() {
-  let authContext: Awaited<ReturnType<typeof getValidatedUser>>;
-
-  try {
-    authContext = await getValidatedUser();
-  } catch {
-    // A temporary Auth outage should not make public login/register pages fail.
-    return;
-  }
-
-  if (!authContext.user) {
-    return;
-  }
-
-  if (await hasRecoveryMarker(authContext.user.id)) {
-    redirect("/reset-password");
-  }
-
-  let accountStatus: string | null = null;
-
-  try {
-    const { data: profile, error } = await authContext.supabase
-      .from("profiles")
-      .select("account_status")
-      .eq("id", authContext.user.id)
-      .maybeSingle();
-    accountStatus = error ? null : (profile?.account_status ?? null);
-  } catch {
-    accountStatus = null;
-  }
-
-  redirect(
-    accountStatus === "active"
-      ? "/marketplace"
-      : "/account-status",
-  );
 }

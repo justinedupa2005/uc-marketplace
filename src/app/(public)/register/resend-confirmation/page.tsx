@@ -3,7 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { usesCodeConfirmation } from "@/lib/auth/confirmation-mode";
-import { redirectAuthenticatedUser } from "@/lib/auth/server";
+import { redirectAuthenticatedUser } from "@/lib/auth/authorization";
 
 import { ResendConfirmationForm } from "./resend-confirmation-form";
 

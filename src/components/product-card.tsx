@@ -26,6 +26,7 @@ export function ProductCard({ product }: ProductCardProps) {
             src={product.image}
             alt={product.imageAlt}
             fill
+            unoptimized
             sizes="(max-width: 639px) 50vw, (max-width: 1023px) 33vw, 25vw"
             className="object-cover"
           />

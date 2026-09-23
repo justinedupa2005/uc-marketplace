@@ -1,11 +1,8 @@
 import type { Metadata } from "next";
 import Image from "next/image";
-import Link from "next/link";
 
-import { AppHeader } from "@/components/app-header";
-import { MobileNavigation } from "@/components/mobile-navigation";
 import { Button } from "@/components/ui/button";
-import { getValidatedUser } from "@/lib/auth/server";
+import { requireVerifiedActiveStudent } from "@/lib/auth/authorization";
 
 export const metadata: Metadata = {
   title: "Sell an Item | UC Marketplace",
@@ -34,23 +31,10 @@ function FormSection({
 }
 
 export default async function SellPage() {
-  const { supabase, user } = await getValidatedUser();
-  const { data: profile } = user
-    ? await supabase
-        .from("profiles")
-        .select("role, account_status, verification_status")
-        .eq("id", user.id)
-        .maybeSingle()
-    : { data: null };
-  const canSell =
-    profile?.role === "student" &&
-    profile.account_status === "active" &&
-    profile.verification_status === "verified";
+  await requireVerifiedActiveStudent("/sell");
 
   return (
     <div className="min-h-screen bg-[#f9f9ff] text-[#121c2a]">
-      <AppHeader />
-
       <main className="mx-auto w-full max-w-3xl px-6 pb-28 pt-6 sm:pt-10 md:pb-12">
         <header>
           <h1 className="text-3xl font-bold tracking-[-0.02em] sm:text-4xl">Sell an Item</h1>
@@ -59,25 +43,6 @@ export default async function SellPage() {
           </p>
         </header>
 
-        {!canSell ? (
-          <section className="mt-8 rounded-xl border border-[#c4c5d5] bg-white p-6 shadow-sm sm:p-8">
-            <h2 className="text-xl font-semibold text-[#002576]">
-              Student verification is required to sell
-            </h2>
-            <p className="mt-3 leading-6 text-[#444653]">
-              Only active, verified student accounts can create listings. Your
-              verification status is also enforced by the database.
-            </p>
-            {profile?.role === "student" && (
-              <Link
-                href="/verification"
-                className="mt-6 inline-flex min-h-11 items-center justify-center rounded-md bg-[#0038a8] px-5 text-sm font-semibold text-white hover:bg-[#002576]"
-              >
-                View Verification Status
-              </Link>
-            )}
-          </section>
-        ) : (
         <form className="mt-8 space-y-7">
           <FormSection title="Step 1: Item Details">
             <div className="space-y-4">
@@ -190,10 +155,7 @@ export default async function SellPage() {
             </Button>
           </div>
         </form>
-        )}
       </main>
-
-      <MobileNavigation active="sell" />
     </div>
   );
 }
