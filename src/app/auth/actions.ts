@@ -30,5 +30,9 @@ export async function logout() {
     cookieStore.delete(RECOVERY_COOKIE_NAME);
   }
 
-  redirect(signedOut ? "/login?loggedOut=true" : "/login?loggedOut=failed");
+  redirect(
+    signedOut
+      ? "/login?authNotice=logged-out"
+      : "/login?loggedOut=failed",
+  );
 }

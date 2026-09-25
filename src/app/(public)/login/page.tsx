@@ -105,11 +105,6 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       message:
         "Your password has been updated successfully. Log in with your new password.",
     };
-  } else if (loggedOut === "true") {
-    notification = {
-      variant: "success",
-      message: "You have been logged out securely.",
-    };
   } else if (loggedOut === "failed") {
     notification = {
       variant: "error",

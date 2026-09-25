@@ -21,6 +21,12 @@ export type LoginState = {
   message: string | null;
 };
 
+function addLoginNotice(path: string) {
+  const url = new URL(path, "https://uc-marketplace.invalid");
+  url.searchParams.set("authNotice", "logged-in");
+  return `${url.pathname}${url.search}`;
+}
+
 export async function login(
   _previousState: LoginState,
   formData: FormData,
@@ -134,5 +140,5 @@ export async function login(
     };
   }
 
-  redirect(redirectTo);
+  redirect(addLoginNotice(redirectTo));
 }
