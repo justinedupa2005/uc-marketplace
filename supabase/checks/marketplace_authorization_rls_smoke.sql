@@ -109,6 +109,36 @@ $$;
 
 grant execute on function pg_temp.expect_denied(text, text) to authenticated;
 
+create or replace function pg_temp.expect_rejected(
+  p_scenario text,
+  p_statement text,
+  p_expected_state text
+)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  begin
+    execute p_statement;
+    insert into pg_temp.authz_results (scenario, passed, observed)
+    values (p_scenario, false, 'operation unexpectedly succeeded');
+  exception
+    when others then
+      insert into pg_temp.authz_results (scenario, passed, observed)
+      values (
+        p_scenario,
+        sqlstate = p_expected_state,
+        'SQLSTATE ' || sqlstate
+      );
+  end;
+end;
+$$;
+
+grant execute on function pg_temp.expect_rejected(text, text, text)
+  to authenticated;
+
 -- Auth rows trigger the production profile-creation workflow. The later
 -- upsert makes the fixtures deterministic without weakening that trigger.
 insert into auth.users (
@@ -376,14 +406,13 @@ where bucket_id = 'listing-images'
 select pg_temp.expect_denied(
   'unverified student cannot create listing',
   format(
-    'insert into public.listings (id,seller_id,category_id,title,description,price,condition,status) values (%L::uuid,%L::uuid,%L::uuid,%L,%L,1,%L,%L)',
+    'insert into public.listings (id,seller_id,category_id,title,description,price,condition) values (%L::uuid,%L::uuid,%L::uuid,%L,%L,1,%L)',
     (select id from pg_temp.authz_resources where label = 'unverified_attempt'),
     (select id from pg_temp.authz_subjects where label = 'unverified'),
     (select id from pg_temp.authz_resources where label = 'category'),
     'Denied listing',
-    'RLS test',
-    'good',
-    'available'
+    'RLS test listing',
+    'good'
   )
 );
 
@@ -434,14 +463,13 @@ from public.listings;
 select pg_temp.expect_denied(
   'pending student cannot create listing',
   format(
-    'insert into public.listings (id,seller_id,category_id,title,description,price,condition,status) values (%L::uuid,%L::uuid,%L::uuid,%L,%L,1,%L,%L)',
+    'insert into public.listings (id,seller_id,category_id,title,description,price,condition) values (%L::uuid,%L::uuid,%L::uuid,%L,%L,1,%L)',
     (select id from pg_temp.authz_resources where label = 'pending_attempt'),
     (select id from pg_temp.authz_subjects where label = 'pending'),
     (select id from pg_temp.authz_resources where label = 'category'),
     'Denied listing',
-    'RLS test',
-    'good',
-    'available'
+    'RLS test listing',
+    'good'
   )
 );
 
@@ -479,14 +507,13 @@ from public.listings;
 select pg_temp.expect_denied(
   'rejected student cannot create listing',
   format(
-    'insert into public.listings (id,seller_id,category_id,title,description,price,condition,status) values (%L::uuid,%L::uuid,%L::uuid,%L,%L,1,%L,%L)',
+    'insert into public.listings (id,seller_id,category_id,title,description,price,condition) values (%L::uuid,%L::uuid,%L::uuid,%L,%L,1,%L)',
     (select id from pg_temp.authz_resources where label = 'rejected_attempt'),
     (select id from pg_temp.authz_subjects where label = 'rejected'),
     (select id from pg_temp.authz_resources where label = 'category'),
     'Denied listing',
-    'RLS test',
-    'good',
-    'available'
+    'RLS test listing',
+    'good'
   )
 );
 
@@ -551,7 +578,7 @@ with created as (
     description,
     price,
     condition,
-    status
+    submission_token
   )
   values (
     (select id from pg_temp.authz_resources where label = 'a_created'),
@@ -561,28 +588,105 @@ with created as (
     'Created by a verified active student.',
     1,
     'good',
-    'available'
+    gen_random_uuid()
   )
+  returning status
+)
+insert into pg_temp.authz_results
+select
+  'verified student can create one private draft',
+  count(*) = 1 and bool_and(status = 'draft'),
+  'created drafts: ' || count(*)::text
+from created;
+
+select pg_temp.expect_rejected(
+  'verified student cannot publish a draft without images',
+  format(
+    'select public.publish_listing(%L::uuid)',
+    (select id from pg_temp.authz_resources where label = 'a_created')
+  ),
+  '23514'
+);
+
+insert into storage.objects (
+  bucket_id,
+  name,
+  owner,
+  owner_id,
+  metadata
+)
+select
+  'listing-images',
+  subject.id::text || '/' || listing.id::text || '/' ||
+    gen_random_uuid()::text || '.jpg',
+  subject.id,
+  subject.id::text,
+  '{"mimetype":"image/jpeg","size":128}'::jsonb
+from pg_temp.authz_subjects as subject
+cross join pg_temp.authz_resources as listing
+where subject.label = 'verified_a'
+  and listing.label = 'a_created';
+
+with saved_image as (
+  insert into public.listing_images (
+    listing_id,
+    storage_path,
+    is_cover,
+    sort_order
+  )
+  select
+    (select id from pg_temp.authz_resources where label = 'a_created'),
+    listing_object.name,
+    true,
+    0
+  from storage.objects as listing_object
+  where listing_object.bucket_id = 'listing-images'
+    and (storage.foldername(listing_object.name))[1] = (
+      select id::text
+      from pg_temp.authz_subjects
+      where label = 'verified_a'
+    )
+    and (storage.foldername(listing_object.name))[2] = (
+      select id::text
+      from pg_temp.authz_resources
+      where label = 'a_created'
+    )
   returning 1
 )
 insert into pg_temp.authz_results
 select
-  'verified student can create own listing',
+  'verified owner can stage one ordered image for a draft',
   count(*) = 1,
-  'created rows: ' || count(*)::text
-from created;
+  'saved image rows: ' || count(*)::text
+from saved_image;
+
+select public.publish_listing(
+  (select id from pg_temp.authz_resources where label = 'a_created')
+);
+
+insert into pg_temp.authz_results
+select
+  'verified owner can publish one complete draft',
+  exists (
+    select 1
+    from public.listings
+    where listings.id = (
+      select id from pg_temp.authz_resources where label = 'a_created'
+    )
+      and listings.status = 'available'
+  ),
+  'published status checked';
 
 select pg_temp.expect_denied(
   'verified student cannot create listing for another seller',
   format(
-    'insert into public.listings (id,seller_id,category_id,title,description,price,condition,status) values (%L::uuid,%L::uuid,%L::uuid,%L,%L,1,%L,%L)',
+    'insert into public.listings (id,seller_id,category_id,title,description,price,condition) values (%L::uuid,%L::uuid,%L::uuid,%L,%L,1,%L)',
     (select id from pg_temp.authz_resources where label = 'a_forged'),
     (select id from pg_temp.authz_subjects where label = 'verified_b'),
     (select id from pg_temp.authz_resources where label = 'category'),
     'Forged listing',
-    'RLS test',
-    'good',
-    'available'
+    'RLS test listing',
+    'good'
   )
 );
 
@@ -850,14 +954,13 @@ from removed;
 select pg_temp.expect_denied(
   'suspended student cannot create listing',
   format(
-    'insert into public.listings (id,seller_id,category_id,title,description,price,condition,status) values (%L::uuid,%L::uuid,%L::uuid,%L,%L,1,%L,%L)',
+    'insert into public.listings (id,seller_id,category_id,title,description,price,condition) values (%L::uuid,%L::uuid,%L::uuid,%L,%L,1,%L)',
     (select id from pg_temp.authz_resources where label = 'suspended_attempt'),
     (select id from pg_temp.authz_subjects where label = 'suspended_student'),
     (select id from pg_temp.authz_resources where label = 'category'),
     'Denied listing',
-    'RLS test',
-    'good',
-    'available'
+    'RLS test listing',
+    'good'
   )
 );
 
@@ -941,14 +1044,13 @@ select
 select pg_temp.expect_denied(
   'active admin is not automatically a student seller',
   format(
-    'insert into public.listings (id,seller_id,category_id,title,description,price,condition,status) values (%L::uuid,%L::uuid,%L::uuid,%L,%L,1,%L,%L)',
+    'insert into public.listings (id,seller_id,category_id,title,description,price,condition) values (%L::uuid,%L::uuid,%L::uuid,%L,%L,1,%L)',
     (select id from pg_temp.authz_resources where label = 'admin_attempt'),
     (select id from pg_temp.authz_subjects where label = 'active_admin'),
     (select id from pg_temp.authz_resources where label = 'category'),
     'Admin listing',
-    'RLS test',
-    'good',
-    'available'
+    'RLS test listing',
+    'good'
   )
 );
 
@@ -984,18 +1086,14 @@ select set_config(
 );
 set local role authenticated;
 
-with changed as (
-  update public.listings
-  set status = 'available'
-  where id = (select id from pg_temp.authz_resources where label = 'admin_target')
-  returning 1
-)
-insert into pg_temp.authz_results
-select
+select pg_temp.expect_denied(
   'seller cannot restore admin-removed listing',
-  count(*) = 0,
-  'updated rows: ' || count(*)::text
-from changed;
+  format(
+    'update public.listings set status = %L where id = %L::uuid',
+    'available',
+    (select id from pg_temp.authz_resources where label = 'admin_target')
+  )
+);
 
 with removed as (
   delete from public.listings

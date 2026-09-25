@@ -36,8 +36,9 @@ const authSecurityHeaders = [
 const nextConfig: NextConfig = {
   experimental: {
     serverActions: {
-      // The verification form accepts a 5 MiB ID image plus multipart overhead.
-      bodySizeLimit: "6mb",
+      // Listing creation accepts up to five 5 MiB images in one authenticated
+      // action. Keep this close to the real multipart maximum to limit abuse.
+      bodySizeLimit: "30mb",
     },
   },
   images: {

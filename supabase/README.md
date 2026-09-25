@@ -33,14 +33,19 @@ Apply migrations in filename order:
      row set part of restrictive marketplace policies, prevents sellers from
      reversing or erasing administrator removals, and reasserts least-privilege
      grants for protected tables and RPCs.
+7. `20260924000000_complete_listing_creation.sql`
+   - Adds private listing drafts, seller-scoped submission idempotency,
+     database content checks, column-level mutation privileges, and the secure
+     `publish_listing(uuid)` finalization RPC.
 
 ## Applying these migrations to another project
 
 In the linked UC Marketplace project, migration 1 was applied manually and its
 CLI history was repaired after checking the remote schema. Migrations 2-4 were
 applied through the CLI on 2026-09-20, migration 5 on 2026-09-21, and migration
-6 on 2026-09-22. Applied migrations recorded in remote history must not be
-edited or run again; add a new forward-only migration for later changes.
+6 on 2026-09-22, and migration 7 on 2026-09-24. Applied migrations recorded in
+remote history must not be edited or run again; add a new forward-only
+migration for later changes.
 
 For another project where migration 1 was already applied manually, first
 verify its schema and repair its migration history. Then apply the remaining
@@ -192,6 +197,23 @@ disposable Auth users for every student/admin authorization state, exercises
 the real `authenticated` role against profile, verification, listing, image,
 Storage, and moderation policies, deletes every fixture, and reports a compact
 `all_passed` result. It does not require or modify a real student account.
+
+## Apply Step 6 listing creation
+
+Apply `20260924000000_complete_listing_creation.sql`, then run
+`checks/listing_creation_security.sql`. Every named check and the final
+`__all_listing_creation_checks_passed__` row must be `true`. Rerun
+`checks/marketplace_authorization_rls_smoke.sql`; its final result must report
+all 47 scenarios passed.
+
+New listings start as private `draft` rows. The authenticated seller uploads
+one to five files to
+`<seller-id>/<listing-id>/<image-uuid>.<jpg|jpeg|png|webp>`, inserts the ordered
+image metadata, and calls `publish_listing(listing_id)`. The RPC changes the
+status to `available` only after rechecking the live verified-active account,
+active category, ownership, cover/order rules, and matching private Storage
+objects. Ordinary authenticated clients cannot insert or update `status` or
+change `seller_id` directly.
 
 ## Bootstrap the first administrator
 
