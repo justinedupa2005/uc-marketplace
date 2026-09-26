@@ -29,14 +29,14 @@ function firstValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function getMarketplaceReturnPath(value: string | undefined) {
+function getListingReturnPath(value: string | undefined) {
   if (!value) return null;
 
   try {
     const url = new URL(value, "https://uc-marketplace.local");
     if (
       url.origin !== "https://uc-marketplace.local" ||
-      url.pathname !== "/marketplace"
+      (url.pathname !== "/marketplace" && url.pathname !== "/favorites")
     ) {
       return null;
     }
@@ -69,14 +69,16 @@ export default async function ListingDetailsPage({
   const wasCreated = query.created === "1" && listing.isOwner;
   const wasUpdated = query.updated === "1" && listing.isOwner;
   const hasMeaningfulUpdate = listing.updatedAt !== listing.createdAt;
-  const marketplaceReturnPath = getMarketplaceReturnPath(firstValue(query.from));
-  const backHref = marketplaceReturnPath ??
-    (listing.isOwner ? "/my-listings" : "/marketplace");
-  const backLabel = marketplaceReturnPath
-    ? "Back to Marketplace"
-    : listing.isOwner
-      ? "Back to My Items"
-      : "Back to Marketplace";
+  const listingReturnPath = getListingReturnPath(firstValue(query.from));
+  const backHref =
+    listingReturnPath ?? (listing.isOwner ? "/my-listings" : "/marketplace");
+  const backLabel = listingReturnPath?.startsWith("/favorites")
+    ? "Back to Favorites"
+    : listingReturnPath
+      ? "Back to Marketplace"
+      : listing.isOwner
+        ? "Back to My Items"
+        : "Back to Marketplace";
 
   return (
     <main className="min-h-[calc(100vh-4rem)] bg-[#f9f9ff] px-5 pb-28 pt-6 text-[#121c2a] sm:px-6 md:pb-12 md:pt-10">

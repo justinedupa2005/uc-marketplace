@@ -52,6 +52,10 @@ Apply migrations in filename order:
    - Adds a generated title/description search field and partial indexes for
      visible-listing newest, category, condition, and price queries without
      widening RLS or exposing listing history.
+12. `20260926030000_complete_favorites.sql`
+   - Adds the newest-saved-first favorites index, an idempotent authenticated
+     favorite-state RPC, and a lock-order-safe legacy toggle while preserving
+     the existing sold/removed cleanup behavior.
 
 ## Applying these migrations to another project
 
@@ -272,6 +276,36 @@ production query plans and listing volume justify their write/storage cost.
 Marketplace queries must still explicitly filter visible statuses because RLS
 also allows a seller to read their own non-public listing history.
 
+## Apply Step 9 favorites
+
+Apply `20260926030000_complete_favorites.sql`, then run, in this order:
+
+1. `checks/favorites_security.sql`
+2. `checks/favorites_rls_smoke.sql`
+3. `checks/listing_management_security.sql`
+4. `checks/marketplace_authorization_rls_smoke.sql`
+
+Every named catalog check and both smoke-test summaries must pass. The focused
+favorites smoke test creates disposable Auth users, profiles, categories, and
+listings. It exercises the real `anon` and `authenticated` roles, removes all
+fixtures before committing, and does not modify a real student account.
+
+The application must call
+`set_listing_favorite(p_listing_id, p_should_favorite)` for mutations. The RPC
+derives the user ID from `auth.uid()`; clients must never submit a `user_id`.
+Setting the same desired state repeatedly is safe and leaves exactly one or
+zero rows. Direct authenticated table writes remain revoked, and RLS limits
+reads to the current verified active student's rows. The legacy
+`toggle_listing_favorite(uuid)` RPC remains temporarily available for deployed
+clients, but new code must use the deterministic setter.
+
+Favorites retain the existing lifecycle choice from Step 7: `reserved`
+listings remain saved, while sold or removed transitions delete their favorite
+rows. Only available or reserved listings from an eligible seller can be newly
+saved, and a seller cannot save their own listing. The composite primary key
+`(user_id, listing_id)` is the duplicate-prevention constraint; a separate
+surrogate ID is intentionally unnecessary.
+
 ## Bootstrap the first administrator
 
 There is intentionally no public admin registration or role-change RPC. After
@@ -326,7 +360,8 @@ ID or changing browser metadata does not grant administrator access.
 The Supabase CLI is installed as a development dependency and this repository
 has a local `supabase/config.toml`. The UC Marketplace project is linked, and
 migration versions 1-11 are recorded as applied, including the Step 8 browsing
-optimization. Running SQL manually does not necessarily add entries to
+optimization. Migration 12 must appear there after Step 9 is applied with
+`supabase db push`. Running SQL manually does not necessarily add entries to
 `supabase_migrations.schema_migrations`.
 
 On a new machine or for a different project, from the repository root run:

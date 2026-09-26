@@ -32,7 +32,6 @@ const reportSchema = z.object({
 export type ListingActionResult = {
   ok: boolean;
   message: string;
-  isFavorited?: boolean;
   conversationId?: string;
 };
 
@@ -50,32 +49,6 @@ function refreshListingPaths(listingId: string) {
   revalidatePath("/my-listings");
   revalidatePath("/favorites");
   revalidatePath("/reservations");
-}
-
-export async function toggleListingFavorite(
-  listingId: string,
-): Promise<ListingActionResult> {
-  const parsedId = listingIdSchema.safeParse(listingId);
-  if (!parsedId.success) return invalidRequest();
-
-  const { supabase } = await requireVerifiedActiveStudent(
-    `/listing/${parsedId.data}`,
-  );
-  const { data, error } = await supabase.rpc("toggle_listing_favorite", {
-    p_listing_id: parsedId.data,
-  });
-
-  if (error || typeof data !== "boolean") {
-    logActionFailure("favorite", error?.code);
-    return invalidRequest("Unable to update this favorite. Please try again.");
-  }
-
-  refreshListingPaths(parsedId.data);
-  return {
-    ok: true,
-    isFavorited: data,
-    message: data ? "Saved to your favorites." : "Removed from your favorites.",
-  };
 }
 
 export async function startListingConversation(

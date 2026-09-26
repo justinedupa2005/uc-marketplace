@@ -6,6 +6,11 @@ import {
   type AuthorizedAccessContext,
 } from "@/lib/auth/authorization";
 import {
+  FAVORITES_MAX_PAGE,
+  FAVORITES_PAGE_SIZE,
+  orderListingsByFavoriteIds,
+} from "@/lib/favorites-pagination";
+import {
   formatListingCondition,
   getListingStatusLabel,
   isListingStatus,
@@ -84,6 +89,22 @@ const LISTING_IMAGE_URL_LIFETIME_SECONDS = 5 * 60;
 export type ListingCardsResult =
   | { products: MarketplaceProduct[]; error: null }
   | { products: []; error: "unavailable" };
+
+export type FavoriteListingsResult =
+  | {
+      products: MarketplaceProduct[];
+      totalCount: number;
+      page: number;
+      pageSize: number;
+      error: null;
+    }
+  | {
+      products: [];
+      totalCount: 0;
+      page: number;
+      pageSize: number;
+      error: "unavailable";
+    };
 
 export type MarketplaceCategory = {
   id: string;
@@ -426,7 +447,16 @@ export async function getMarketplaceListings(
     listings.map((listing) => listing.id),
   );
 
-  if (favorites.hasError) console.warn("Unable to load marketplace favorites");
+  if (favorites.hasError) {
+    console.warn("Unable to load marketplace favorites");
+    return {
+      products: [],
+      totalCount: 0,
+      page,
+      pageSize: MARKETPLACE_PAGE_SIZE,
+      error: "unavailable",
+    };
+  }
 
   return {
     products: await mapListingCards(supabase, listings, favorites.ids, user.id),
@@ -462,42 +492,86 @@ export async function getSellerListings(): Promise<ListingCardsResult> {
   };
 }
 
-export async function getFavoriteListings(): Promise<ListingCardsResult> {
+export async function getFavoriteListings(
+  requestedPage = 1,
+): Promise<FavoriteListingsResult> {
   const { supabase, user } = await requireVerifiedActiveStudent("/favorites");
-  const { data: favorites, error: favoriteError } = await supabase
+  const page =
+    Number.isSafeInteger(requestedPage) &&
+    requestedPage >= 1 &&
+    requestedPage <= FAVORITES_MAX_PAGE
+      ? requestedPage
+      : 1;
+  const offset = (page - 1) * FAVORITES_PAGE_SIZE;
+  const {
+    data: favorites,
+    error: favoriteError,
+    count,
+  } = await supabase
     .from("favorites")
-    .select("listing_id, created_at")
+    // Keep hidden or unavailable listings out before count/range pagination.
+    // The inner relation also applies the listings table's RLS policy.
+    .select("listing_id, created_at, listings!inner()", { count: "exact" })
     .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
+    .in("listings.status", ["available", "reserved"])
+    .order("created_at", { ascending: false })
+    .order("listing_id", { ascending: false })
+    .range(offset, offset + FAVORITES_PAGE_SIZE - 1);
 
   if (favoriteError) {
     console.warn("Unable to load favorites", { code: favoriteError.code });
-    return { products: [], error: "unavailable" };
+    return {
+      products: [],
+      totalCount: 0,
+      page,
+      pageSize: FAVORITES_PAGE_SIZE,
+      error: "unavailable",
+    };
   }
 
   const listingIds = (favorites ?? []).flatMap((favorite) =>
     typeof favorite.listing_id === "string" ? [favorite.listing_id] : [],
   );
-  if (listingIds.length === 0) return { products: [], error: null };
+  if (listingIds.length === 0) {
+    return {
+      products: [],
+      totalCount: count ?? 0,
+      page,
+      pageSize: FAVORITES_PAGE_SIZE,
+      error: null,
+    };
+  }
 
   const { data, error } = await supabase
     .from("listings")
     .select(cardSelection)
     .in("id", listingIds)
-    .in("status", ["available", "reserved"]);
+    .in("status", ["available", "reserved"])
+    .order("is_cover", {
+      referencedTable: "listing_images",
+      ascending: false,
+    })
+    .order("sort_order", {
+      referencedTable: "listing_images",
+      ascending: true,
+    })
+    .limit(1, { referencedTable: "listing_images" });
 
   if (error) {
     console.warn("Unable to load favorite listings", { code: error.code });
-    return { products: [], error: "unavailable" };
+    return {
+      products: [],
+      totalCount: 0,
+      page,
+      pageSize: FAVORITES_PAGE_SIZE,
+      error: "unavailable",
+    };
   }
 
-  const listingById = new Map(
-    ((data ?? []) as unknown as ListingCardRow[]).map((listing) => [listing.id, listing]),
+  const orderedListings = orderListingsByFavoriteIds(
+    listingIds,
+    (data ?? []) as unknown as ListingCardRow[],
   );
-  const orderedListings = listingIds.flatMap((id) => {
-    const listing = listingById.get(id);
-    return listing ? [listing] : [];
-  });
 
   return {
     products: await mapListingCards(
@@ -506,6 +580,9 @@ export async function getFavoriteListings(): Promise<ListingCardsResult> {
       new Set(listingIds),
       user.id,
     ),
+    totalCount: count ?? 0,
+    page,
+    pageSize: FAVORITES_PAGE_SIZE,
     error: null,
   };
 }

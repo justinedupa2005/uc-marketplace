@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 
-import { toggleListingFavorite } from "@/app/(marketplace)/listing/actions";
+import { setListingFavorite } from "@/app/(marketplace)/favorites/actions";
 import { ActionNotice } from "@/components/action-notice";
 
 export function FavoriteButton({
@@ -10,11 +10,13 @@ export function FavoriteButton({
   title,
   initialIsFavorited,
   compact = false,
+  onFavoriteChange,
 }: {
   listingId: string;
   title: string;
   initialIsFavorited: boolean;
   compact?: boolean;
+  onFavoriteChange?: (listingId: string, isFavorited: boolean) => void;
 }) {
   const [isFavorited, setIsFavorited] = useState(initialIsFavorited);
   const [notice, setNotice] = useState<{
@@ -22,22 +24,53 @@ export function FavoriteButton({
     variant: "success" | "error";
   } | null>(null);
   const [pending, startTransition] = useTransition();
+  const requestInFlight = useRef(false);
   const dismissNotice = useCallback(() => setNotice(null), []);
 
+  useEffect(() => {
+    if (!requestInFlight.current) {
+      setIsFavorited(initialIsFavorited);
+    }
+  }, [initialIsFavorited]);
+
   function toggleFavorite() {
-    if (pending) return;
+    if (requestInFlight.current) return;
+
+    const previousState = isFavorited;
+    const requestedState = !previousState;
+
+    requestInFlight.current = true;
+    setIsFavorited(requestedState);
 
     startTransition(async () => {
-      const result = await toggleListingFavorite(listingId);
+      try {
+        const result = await setListingFavorite(listingId, requestedState);
 
-      if (result.ok && typeof result.isFavorited === "boolean") {
-        setIsFavorited(result.isFavorited);
+        if (!result.ok) {
+          setIsFavorited(previousState);
+          setNotice({ message: result.message, variant: "error" });
+          return;
+        }
+
+        const confirmedState =
+          typeof result.isFavorited === "boolean"
+            ? result.isFavorited
+            : requestedState;
+
+        setIsFavorited(confirmedState);
+        onFavoriteChange?.(listingId, confirmedState);
+        setNotice({ message: result.message, variant: "success" });
+      } catch {
+        setIsFavorited(previousState);
+        setNotice({
+          message: requestedState
+            ? "Unable to save this listing. Please try again."
+            : "Unable to remove this favorite. Please try again.",
+          variant: "error",
+        });
+      } finally {
+        requestInFlight.current = false;
       }
-
-      setNotice({
-        message: result.message,
-        variant: result.ok ? "success" : "error",
-      });
     });
   }
 
@@ -47,12 +80,13 @@ export function FavoriteButton({
         type="button"
         disabled={pending}
         onClick={toggleFavorite}
+        aria-busy={pending}
         aria-pressed={isFavorited}
         aria-label={`${isFavorited ? "Remove" : "Save"} ${title} ${
           isFavorited ? "from" : "to"
         } favorites`}
         className={`inline-flex items-center justify-center gap-2 rounded-md border border-[#c4c5d5] bg-white font-semibold text-[#002576] transition hover:bg-[#e9effb] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0038a8] disabled:cursor-wait disabled:opacity-60 ${
-          compact ? "size-9 rounded-full p-2" : "min-h-11 px-4 text-sm"
+          compact ? "size-11 rounded-full p-2" : "min-h-11 px-4 text-sm"
         }`}
       >
         <svg

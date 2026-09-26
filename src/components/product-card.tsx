@@ -27,6 +27,7 @@ type ProductCardProps = {
   showMetadata?: boolean;
   returnTo?: string;
   actions?: ReactNode;
+  onFavoriteChange?: (listingId: string, isFavorited: boolean) => void;
 };
 
 export function ProductCard({
@@ -35,12 +36,14 @@ export function ProductCard({
   showMetadata = false,
   returnTo,
   actions,
+  onFavoriteChange,
 }: ProductCardProps) {
   const listingHref = returnTo
     ? { pathname: `/listing/${product.id}`, query: { from: returnTo } }
     : `/listing/${product.id}`;
   const formattedDate = new Intl.DateTimeFormat("en-PH", {
     dateStyle: "medium",
+    timeZone: "Asia/Manila",
   }).format(new Date(product.createdAt));
 
   return (
@@ -60,6 +63,25 @@ export function ProductCard({
               sizes="(max-width: 639px) 50vw, (max-width: 1023px) 33vw, 25vw"
               className="object-cover"
             />
+          )}
+          {!product.image && (
+            <span
+              aria-hidden="true"
+              className="flex size-full flex-col items-center justify-center gap-2 text-[#5b6070]"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                className="size-9"
+              >
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <circle cx="8.5" cy="9" r="1.5" />
+                <path d="m4 17 4.5-4.5 3.25 3.25 2.5-2.5L20 19" />
+              </svg>
+              <span className="text-xs font-medium">No image available</span>
+            </span>
           )}
         </Link>
         <div className="pointer-events-none absolute right-2 top-2">
@@ -84,6 +106,7 @@ export function ProductCard({
                 title={product.title}
                 initialIsFavorited={product.isFavorited}
                 compact
+                onFavoriteChange={onFavoriteChange}
               />
             </div>
           )}
@@ -91,7 +114,7 @@ export function ProductCard({
 
         {showMetadata && (
           <p className="mt-1 line-clamp-1 text-xs text-[#5b6070]">
-            {product.categoryName} · {formattedDate}
+            {product.categoryName} {"\u00b7"} {formattedDate}
           </p>
         )}
 

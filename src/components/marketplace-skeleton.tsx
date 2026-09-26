@@ -1,8 +1,16 @@
-export function MarketplaceSkeleton({ cardCount = 8 }: { cardCount?: number }) {
+export function MarketplaceSkeleton({
+  cardCount = 8,
+  label = "Loading marketplace listings",
+  gridClassName = "grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4",
+}: {
+  cardCount?: number;
+  label?: string;
+  gridClassName?: string;
+}) {
   return (
-    <section aria-label="Loading marketplace listings" aria-busy="true" aria-live="polite">
-      <span className="sr-only">Loading marketplace listings.</span>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
+    <section aria-label={label} aria-busy="true" aria-live="polite">
+      <span className="sr-only">{label}.</span>
+      <div className={gridClassName}>
         {Array.from({ length: cardCount }, (_, index) => (
           <div
             key={index}
