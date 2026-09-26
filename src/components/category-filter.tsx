@@ -1,30 +1,53 @@
-import { Button } from "@/components/ui/button";
+import Link from "next/link";
 
-const categories = [
-  "All Items",
-  "Books",
-  "PE Uniforms",
-  "School Uniforms",
-  "Supplies",
-  "Electronics",
-  "Accessories",
-  "Others",
-];
+import type { MarketplaceCategory } from "@/lib/listings";
 
-export function CategoryFilter() {
+function marketplaceUrl({
+  categoryId,
+  query,
+  sort,
+}: {
+  categoryId?: string;
+  query?: string;
+  sort?: string;
+}) {
+  const params = new URLSearchParams();
+  if (categoryId) params.set("category", categoryId);
+  if (query) params.set("query", query);
+  if (sort && sort !== "newest") params.set("sort", sort);
+  const search = params.toString();
+  return search ? `/marketplace?${search}` : "/marketplace";
+}
+
+export function CategoryFilter({
+  categories,
+  selectedCategoryId,
+  query,
+  sort,
+}: {
+  categories: MarketplaceCategory[];
+  selectedCategoryId?: string;
+  query?: string;
+  sort?: string;
+}) {
+  const options = [{ id: undefined, name: "All Items" }, ...categories];
+
   return (
     <nav aria-label="Marketplace categories" className="-mx-1 overflow-x-auto py-2">
       <div className="flex w-max gap-2 px-1">
-        {categories.map((category, index) => (
-          <Button
-            key={category}
-            variant={index === 0 ? "primary" : "secondary"}
-            aria-pressed={index === 0}
-            className="h-[34px] rounded-full px-4 text-xs tracking-[0.05em]"
+        {options.map((category) => {
+          const selected = category.id === selectedCategoryId;
+          return (
+          <Link
+            key={category.id ?? "all"}
+            href={marketplaceUrl({ categoryId: category.id, query, sort })}
+            aria-current={selected ? "page" : undefined}
+            className={`inline-flex h-[34px] items-center rounded-full border px-4 text-xs font-semibold tracking-[0.05em] transition ${selected ? "border-[#0038a8] bg-[#0038a8] text-white" : "border-[#c4c5d5] bg-white text-[#0038a8] hover:bg-[#edf2ff]"}`}
           >
-            {category}
-          </Button>
-        ))}
+            {category.name}
+          </Link>
+          );
+        })}
       </div>
     </nav>
   );

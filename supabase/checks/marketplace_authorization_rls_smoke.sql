@@ -690,55 +690,39 @@ select pg_temp.expect_denied(
   )
 );
 
-with changed as (
-  update public.listings
-  set title = 'Allowed owner update'
-  where id = (select id from pg_temp.authz_resources where label = 'a_available')
-  returning 1
-)
-insert into pg_temp.authz_results
-select
-  'verified student can update own listing',
-  count(*) = 1,
-  'updated rows: ' || count(*)::text
-from changed;
+select pg_temp.expect_denied(
+  'published listing content updates require the owner RPC',
+  format(
+    'update public.listings set title = %L where id = %L::uuid',
+    'Direct update denied',
+    (select id from pg_temp.authz_resources where label = 'a_available')
+  )
+);
 
-with changed as (
-  update public.listings
-  set title = 'Forbidden cross-owner update'
-  where id = (select id from pg_temp.authz_resources where label = 'b_available')
-  returning 1
-)
-insert into pg_temp.authz_results
-select
+select pg_temp.expect_denied(
   'verified student cannot update another seller listing',
-  count(*) = 0,
-  'updated rows: ' || count(*)::text
-from changed;
+  format(
+    'update public.listings set title = %L where id = %L::uuid',
+    'Forbidden cross-owner update',
+    (select id from pg_temp.authz_resources where label = 'b_available')
+  )
+);
 
-with removed as (
-  delete from public.listings
-  where id = (select id from pg_temp.authz_resources where label = 'b_available')
-  returning 1
-)
-insert into pg_temp.authz_results
-select
-  'verified student cannot delete another seller listing',
-  count(*) = 0,
-  'deleted rows: ' || count(*)::text
-from removed;
+select pg_temp.expect_denied(
+  'verified student cannot hard delete another seller listing',
+  format(
+    'delete from public.listings where id = %L::uuid',
+    (select id from pg_temp.authz_resources where label = 'b_available')
+  )
+);
 
-with removed as (
-  delete from public.listings
-  where id = (select id from pg_temp.authz_resources where label = 'a_delete')
-  returning 1
-)
-insert into pg_temp.authz_results
-select
-  'verified student can delete own non-removed listing',
-  count(*) = 1,
-  'deleted rows: ' || count(*)::text
-from removed;
+select pg_temp.expect_denied(
+  'verified student cannot hard delete a published owned listing',
+  format(
+    'delete from public.listings where id = %L::uuid',
+    (select id from pg_temp.authz_resources where label = 'a_delete')
+  )
+);
 
 select pg_temp.expect_denied(
   'verified student cannot transfer listing ownership',
@@ -766,34 +750,21 @@ select
   ),
   'targeted image visibility checked';
 
-with changed as (
-  update public.listing_images
-  set is_cover = false
-  where id = (
-    select id from pg_temp.authz_resources where label = 'a_available_image'
+select pg_temp.expect_denied(
+  'published image metadata updates require the owner RPC',
+  format(
+    'update public.listing_images set is_cover = false where id = %L::uuid',
+    (select id from pg_temp.authz_resources where label = 'a_available_image')
   )
-  returning 1
-)
-insert into pg_temp.authz_results
-select
-  'verified owner can update own image metadata',
-  count(*) = 1,
-  'updated rows: ' || count(*)::text
-from changed;
+);
 
-with removed as (
-  delete from public.listing_images
-  where id = (
-    select id from pg_temp.authz_resources where label = 'a_removed_image'
+select pg_temp.expect_denied(
+  'seller cannot directly delete published image metadata',
+  format(
+    'delete from public.listing_images where id = %L::uuid',
+    (select id from pg_temp.authz_resources where label = 'a_removed_image')
   )
-  returning 1
-)
-insert into pg_temp.authz_results
-select
-  'seller cannot delete image metadata after admin removal',
-  count(*) = 0,
-  'deleted rows: ' || count(*)::text
-from removed;
+);
 
 with changed as (
   update storage.objects
@@ -810,8 +781,8 @@ with changed as (
 )
 insert into pg_temp.authz_results
 select
-  'verified owner can update own listing image object',
-  count(*) = 1,
+  'verified owner cannot replace a published listing image object',
+  count(*) = 0,
   'updated objects: ' || count(*)::text
 from changed;
 
@@ -859,18 +830,14 @@ select set_config(
 );
 set local role authenticated;
 
-with changed as (
-  update public.listings
-  set title = 'Forbidden cross-owner update'
-  where id = (select id from pg_temp.authz_resources where label = 'a_available')
-  returning 1
-)
-insert into pg_temp.authz_results
-select
+select pg_temp.expect_denied(
   'second verified student cannot update first seller listing',
-  count(*) = 0,
-  'updated rows: ' || count(*)::text
-from changed;
+  format(
+    'update public.listings set title = %L where id = %L::uuid',
+    'Forbidden cross-owner update',
+    (select id from pg_temp.authz_resources where label = 'a_available')
+  )
+);
 
 with removed as (
   delete from storage.objects
@@ -922,34 +889,22 @@ where id = (
   select id from pg_temp.authz_resources where label = 'suspended_listing'
 );
 
-with changed as (
-  update public.listings
-  set title = 'Suspended update'
-  where id = (
-    select id from pg_temp.authz_resources where label = 'suspended_listing'
-  )
-  returning 1
-)
-insert into pg_temp.authz_results
-select
+select pg_temp.expect_denied(
   'suspended student cannot update own listing',
-  count(*) = 0,
-  'updated rows: ' || count(*)::text
-from changed;
-
-with removed as (
-  delete from public.listings
-  where id = (
-    select id from pg_temp.authz_resources where label = 'suspended_listing'
+  format(
+    'update public.listings set title = %L where id = %L::uuid',
+    'Suspended update',
+    (select id from pg_temp.authz_resources where label = 'suspended_listing')
   )
-  returning 1
-)
-insert into pg_temp.authz_results
-select
+);
+
+select pg_temp.expect_denied(
   'suspended student cannot delete own listing',
-  count(*) = 0,
-  'deleted rows: ' || count(*)::text
-from removed;
+  format(
+    'delete from public.listings where id = %L::uuid',
+    (select id from pg_temp.authz_resources where label = 'suspended_listing')
+  )
+);
 
 select pg_temp.expect_denied(
   'suspended student cannot create listing',
@@ -1095,17 +1050,13 @@ select pg_temp.expect_denied(
   )
 );
 
-with removed as (
-  delete from public.listings
-  where id = (select id from pg_temp.authz_resources where label = 'admin_target')
-  returning 1
-)
-insert into pg_temp.authz_results
-select
+select pg_temp.expect_denied(
   'seller cannot erase admin-removed listing',
-  count(*) = 0,
-  'deleted rows: ' || count(*)::text
-from removed;
+  format(
+    'delete from public.listings where id = %L::uuid',
+    (select id from pg_temp.authz_resources where label = 'admin_target')
+  )
+);
 
 reset role;
 

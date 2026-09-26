@@ -89,10 +89,9 @@ async function cleanupIncompleteListing({
   }
 
   try {
-    const { error } = await supabase
-      .from("listings")
-      .delete()
-      .eq("id", listingId);
+    const { error } = await supabase.rpc("discard_listing_draft", {
+      p_listing_id: listingId,
+    });
 
     if (!error) {
       return true;
@@ -122,8 +121,8 @@ async function findListingForSubmission(
 function redirectToCreatedListing(listingId: string): never {
   revalidatePath("/marketplace");
   revalidatePath("/my-listings");
-  revalidatePath(`/listings/${listingId}`);
-  redirect(`/listings/${listingId}?created=1`);
+  revalidatePath(`/listing/${listingId}`);
+  redirect(`/listing/${listingId}?created=1`);
 }
 
 export async function createListing(

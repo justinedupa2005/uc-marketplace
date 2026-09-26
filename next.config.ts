@@ -49,6 +49,11 @@ const nextConfig: NextConfig = {
             hostname: new URL(supabaseUrl).hostname,
             pathname: "/storage/v1/object/sign/listing-images/**",
           },
+          {
+            protocol: "https",
+            hostname: new URL(supabaseUrl).hostname,
+            pathname: "/storage/v1/object/public/avatars/**",
+          },
         ]
       : [],
   },

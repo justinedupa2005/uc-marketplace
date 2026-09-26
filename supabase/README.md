@@ -37,15 +37,27 @@ Apply migrations in filename order:
    - Adds private listing drafts, seller-scoped submission idempotency,
      database content checks, column-level mutation privileges, and the secure
      `publish_listing(uuid)` finalization RPC.
+8. `20260925000000_complete_listing_browsing_management.sql`
+   - Adds favorites, conversations/messages, reservations, private listing
+     reports, owner lifecycle transitions, atomic listing edits, and stricter
+     published-image and Storage mutation boundaries.
+9. `20260926000000_harden_listing_interaction_lifecycle.sql`
+   - Preserves safe sold/removed interaction history, standardizes lock order,
+     closes status-transition races, makes duplicate reports idempotent, and
+     hardens image publication, editing, and cleanup concurrency.
+10. `20260926010000_allow_zero_price_listings.sql`
+   - Aligns create/edit validation and database checks so free listings may use
+     a price of zero while retaining the existing marketplace price ceiling.
 
 ## Applying these migrations to another project
 
 In the linked UC Marketplace project, migration 1 was applied manually and its
 CLI history was repaired after checking the remote schema. Migrations 2-4 were
 applied through the CLI on 2026-09-20, migration 5 on 2026-09-21, and migration
-6 on 2026-09-22, and migration 7 on 2026-09-24. Applied migrations recorded in
-remote history must not be edited or run again; add a new forward-only
-migration for later changes.
+6 on 2026-09-22, migration 7 on 2026-09-24, migration 8 on 2026-09-25, and
+migrations 9-10 on 2026-09-26.
+Applied migrations recorded in remote history must not be edited or run again;
+add a new forward-only migration for later changes.
 
 For another project where migration 1 was already applied manually, first
 verify its schema and repair its migration history. Then apply the remaining
@@ -171,11 +183,11 @@ are denied in addition to checking the browser redirects. Features whose tables
 or mutations do not yet exist (messages, notifications, favorites, and
 reservations) must receive the same live-profile checks when implemented.
 
-### Authorization rules for future marketplace tables
+### Authorization rules for marketplace interaction tables
 
-Do not create these tables merely for authorization scaffolding. When each
-feature is implemented, its first migration and every related Server Action or
-Route Handler must enforce this matrix using the caller's live profile:
+Migration 8 implements these rules using live-profile checks, participant- or
+owner-scoped RLS, least-privilege table grants, and authenticated
+security-definer RPCs:
 
 | Feature | Required database authorization |
 | --- | --- |
@@ -183,7 +195,7 @@ Route Handler must enforce this matrix using the caller's live profile:
 | Conversations | Verified active student; only listed participants may read the conversation, and only a participant may initiate allowed changes. |
 | Messages | Verified active student; sender must be `auth.uid()` and a current conversation participant; only participants may read. Suspension must immediately block sends. |
 | Reservations | Verified active student; buyer must be `auth.uid()`, the referenced listing must be eligible, and only the buyer or seller may read or perform explicitly allowed state transitions. |
-| Notifications | A user may read/update only their own delivery state. Ordinary students receive no direct INSERT grant for system or administrator notifications. |
+| Notifications | Not created in Step 7. Reservation requests are exposed directly on `/reservations`; a future notification table must be owner-scoped and system-written. |
 
 Keep administrative moderation policies/RPCs separate from student policies.
 An active administrator is not implicitly a marketplace buyer or seller.
@@ -214,6 +226,30 @@ status to `available` only after rechecking the live verified-active account,
 active category, ownership, cover/order rules, and matching private Storage
 objects. Ordinary authenticated clients cannot insert or update `status` or
 change `seller_id` directly.
+
+## Apply Step 7 listing browsing and management
+
+Apply `20260925000000_complete_listing_browsing_management.sql` followed by
+`20260926000000_harden_listing_interaction_lifecycle.sql` and
+`20260926010000_allow_zero_price_listings.sql`, then run, in this order:
+
+1. `checks/listing_management_security.sql`
+2. `checks/listing_creation_security.sql`
+3. `checks/marketplace_authorization_rls_smoke.sql`
+4. `checks/listing_management_rls_smoke.sql`
+
+Every named check and final summary row must be `true`. The Step 7 smoke test
+creates three disposable verified students plus admin, pending, and suspended
+test accounts. It exercises the actual `authenticated` role across favorite,
+conversation, message, reservation, report, ownership, lifecycle, and account
+restriction scenarios, then removes all fixtures before returning.
+
+Published listing edits and seller status changes are RPC-only. This keeps
+image metadata replacement, optimistic concurrency checks, reservation status,
+and listing status changes atomic. Sellers soft-remove published listings;
+hard deletion is limited to unpublished drafts through
+`discard_listing_draft`. Step 7 intentionally does not create notifications;
+reservation activity is shown directly on `/reservations`.
 
 ## Bootstrap the first administrator
 
@@ -268,7 +304,7 @@ ID or changing browser metadata does not grant administrator access.
 
 The Supabase CLI is installed as a development dependency and this repository
 has a local `supabase/config.toml`. The UC Marketplace project is linked, and
-all six migration versions are recorded as applied. Running SQL manually does
+all eight migration versions are recorded as applied. Running SQL manually does
 not necessarily add entries to `supabase_migrations.schema_migrations`.
 
 On a new machine or for a different project, from the repository root run:

@@ -1,76 +1,53 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
-import { ReservationCard, type MockReservation } from "@/components/reservation-card";
-import { requireVerifiedActiveStudent } from "@/lib/auth/authorization";
+import { ReservationSummaryCard } from "@/components/reservation-summary-card";
+import { getReservations } from "@/lib/marketplace-interactions";
 
 export const metadata: Metadata = {
   title: "Reservations | UC Marketplace",
-  description: "Manage upcoming UC Marketplace meetups.",
+  description: "Manage UC Marketplace reservation requests.",
 };
 
-const reservations: MockReservation[] = [
-  {
-    id: 1,
-    title: "TI-84 Plus CE Calculator",
-    buyer: "Sarah J.",
-    location: "UC Main - Library Lobby",
-    time: "Today, 2:30 PM",
-    status: "Pending",
-    image: "/assets/app/reservation-calculator.png",
-    imageAlt: "A TI-84 Plus CE calculator",
-  },
-  {
-    id: 2,
-    title: "Intro to Psychology 4th Ed.",
-    buyer: "Michael T.",
-    location: "Student Union - Cafe",
-    time: "Tomorrow, 10:00 AM",
-    status: "Confirmed",
-    image: "/assets/app/reservation-books.png",
-    imageAlt: "A stack of psychology textbooks",
-  },
-];
-
-export default async function ReservationsPage() {
-  await requireVerifiedActiveStudent("/reservations");
+export default async function ReservationsPage({ searchParams }: {
+  searchParams: Promise<{ view?: string | string[] }>;
+}) {
+  const [{ reservations, error }, query] = await Promise.all([getReservations(), searchParams]);
+  const view = query.view === "outgoing" ? "outgoing" : "incoming";
+  const incoming = reservations.filter((reservation) => reservation.isIncoming);
+  const outgoing = reservations.filter((reservation) => !reservation.isIncoming);
+  const visible = view === "incoming" ? incoming : outgoing;
 
   return (
-    <div className="min-h-screen bg-[#f9f9ff] text-[#121c2a]">
-      <main className="mx-auto w-full max-w-7xl px-6 pb-28 pt-10 md:pb-12">
-        <header>
-          <h1 className="text-3xl font-bold tracking-[-0.02em] text-[#002576] sm:text-4xl">
-            Reservations
-          </h1>
-          <p className="mt-2 max-w-sm text-lg leading-7 text-[#444653]">
-            Manage your upcoming campus meetups.
-          </p>
-        </header>
+    <main className="min-h-[calc(100vh-4rem)] bg-[#f9f9ff] px-5 pb-28 pt-10 text-[#121c2a] sm:px-6 md:pb-12">
+      <section className="mx-auto w-full max-w-[1100px]">
+        <h1 className="text-3xl font-bold tracking-[-0.02em] text-[#002576] sm:text-4xl">Reservations</h1>
+        <p className="mt-2 text-base text-[#444653]">Manage reservation requests for campus exchanges.</p>
 
-        <div role="tablist" aria-label="Reservation type" className="mt-8 flex max-w-md border-b border-[#c4c5d5]">
-          <button
-            type="button"
-            role="tab"
-            aria-selected="true"
-            className="flex-1 border-b-2 border-[#0038a8] px-4 py-3 text-center text-lg font-semibold leading-6 text-[#0038a8]"
-          >
-            Incoming<br />(Seller)
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected="false"
-            className="flex-1 px-4 py-3 text-center text-lg font-semibold leading-6 text-[#444653]"
-          >
-            Outgoing<br />(Buyer)
-          </button>
-        </div>
+        {!error && (
+          <nav aria-label="Reservation type" className="mt-7 flex max-w-md border-b border-[#c4c5d5]">
+            <Link href="/reservations" aria-current={view === "incoming" ? "page" : undefined} className={`flex-1 border-b-2 px-4 py-3 text-center text-sm font-semibold ${view === "incoming" ? "border-[#0038a8] text-[#0038a8]" : "border-transparent text-[#444653]"}`}>Incoming ({incoming.length})</Link>
+            <Link href="/reservations?view=outgoing" aria-current={view === "outgoing" ? "page" : undefined} className={`flex-1 border-b-2 px-4 py-3 text-center text-sm font-semibold ${view === "outgoing" ? "border-[#0038a8] text-[#0038a8]" : "border-transparent text-[#444653]"}`}>Outgoing ({outgoing.length})</Link>
+          </nav>
+        )}
 
-        <section aria-label="Incoming reservations" className="mt-8 grid gap-4 md:grid-cols-2">
-          {reservations.map((reservation) => (
-            <ReservationCard key={reservation.id} reservation={reservation} />
-          ))}
-        </section>
-      </main>
-    </div>
+        {error ? (
+          <div className="mt-8 rounded-xl border border-[#c4c5d5] bg-white p-8 text-center shadow-sm">
+            <h2 className="text-lg font-bold">Reservations temporarily unavailable</h2>
+            <Link href="/reservations" className="mt-5 inline-flex min-h-11 items-center rounded-md border border-[#0038a8] px-5 text-sm font-semibold text-[#0038a8]">Try Again</Link>
+          </div>
+        ) : visible.length > 0 ? (
+          <div className="mt-8 grid gap-5 md:grid-cols-2">
+            {visible.map((reservation) => <ReservationSummaryCard key={reservation.id} reservation={reservation} />)}
+          </div>
+        ) : (
+          <div className="mt-8 rounded-xl border border-[#c4c5d5] bg-white p-8 text-center shadow-sm">
+            <h2 className="text-lg font-bold">No {view} reservations</h2>
+            <p className="mt-2 text-sm text-[#444653]">{view === "incoming" ? "New buyer requests will appear here." : "Request an available item to track it here."}</p>
+            {view === "outgoing" && <Link href="/marketplace" className="mt-5 inline-flex min-h-11 items-center rounded-md bg-[#0038a8] px-5 text-sm font-semibold text-white">Browse Marketplace</Link>}
+          </div>
+        )}
+      </section>
+    </main>
   );
 }

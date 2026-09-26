@@ -170,7 +170,7 @@ export function SellForm({
     (option) => option.value === condition,
   );
   const formattedPrice = useMemo(() => {
-    if (!/^\d+(?:\.\d{1,2})?$/.test(price) || Number(price) <= 0) {
+    if (!/^\d+(?:\.\d{1,2})?$/.test(price) || Number(price) < 0) {
       return "Not set";
     }
 
@@ -719,7 +719,7 @@ export function SellForm({
                 setPrice(event.target.value);
                 markFieldEdited("price");
               }}
-              min="0.01"
+              min="0"
               max={LISTING_PRICE_MAX_PHP}
               step="0.01"
               inputMode="decimal"

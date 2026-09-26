@@ -134,8 +134,8 @@ const priceSchema = z.preprocess(
       /^\d+(?:\.\d{1,2})?$/,
       "Enter a valid price with no more than two decimal places.",
     )
-    .refine((value) => Number.isFinite(Number(value)) && Number(value) > 0, {
-      message: "Price must be greater than zero.",
+    .refine((value) => Number.isFinite(Number(value)) && Number(value) >= 0, {
+      message: "Price cannot be negative.",
     })
     .refine((value) => Number(value) <= LISTING_PRICE_MAX_PHP, {
       message: `Price cannot exceed ₱${LISTING_PRICE_MAX_PHP.toLocaleString("en-PH")}.`,

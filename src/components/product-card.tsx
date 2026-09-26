@@ -1,41 +1,43 @@
 import Image from "next/image";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { FavoriteButton } from "@/components/favorite-button";
+import { ConditionBadge, ListingStatusBadge } from "@/components/listing-badges";
+import type { ListingStatus, ListingStatusLabel } from "@/lib/listing-rules";
 
 export type MarketplaceProduct = {
   id: string | number;
   title: string;
   price: string;
   condition: string;
-  status: "Available" | "Reserved" | "Sold" | "Removed" | "Draft";
+  status: ListingStatusLabel;
+  statusValue: ListingStatus;
+  categoryName: string;
+  createdAt: string;
   image: string | null;
   imageAlt: string;
+  isFavorited: boolean;
+  isOwner: boolean;
 };
 
 type ProductCardProps = {
   product: MarketplaceProduct;
   showFavorite?: boolean;
+  showMetadata?: boolean;
+  actions?: ReactNode;
 };
-
-function getStatusTone(status: MarketplaceProduct["status"]) {
-  if (status === "Available") {
-    return "available" as const;
-  }
-
-  if (status === "Reserved" || status === "Draft") {
-    return "pending" as const;
-  }
-
-  return "neutral" as const;
-}
 
 export function ProductCard({
   product,
   showFavorite = true,
+  showMetadata = false,
+  actions,
 }: ProductCardProps) {
-  const listingHref = `/listings/${product.id}`;
+  const listingHref = `/listing/${product.id}`;
+  const formattedDate = new Intl.DateTimeFormat("en-PH", {
+    dateStyle: "medium",
+  }).format(new Date(product.createdAt));
 
   return (
     <article className="overflow-hidden rounded-2xl border border-[#c4c5d5] bg-white shadow-sm transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-md">
@@ -56,12 +58,9 @@ export function ProductCard({
             />
           )}
         </Link>
-        <Badge
-          tone="neutral"
-          className="pointer-events-none absolute right-2 top-2 backdrop-blur-sm"
-        >
-          {product.condition}
-        </Badge>
+        <div className="pointer-events-none absolute right-2 top-2">
+          <ConditionBadge condition={product.condition} />
+        </div>
       </div>
 
       <div className="flex min-h-28 flex-col gap-1 p-4">
@@ -74,31 +73,32 @@ export function ProductCard({
               {product.title}
             </Link>
           </h3>
-          {showFavorite && (
-            <Button
-              variant="icon"
-              aria-label={`Save ${product.title}`}
-              className="-mr-2 -mt-1 size-8 shrink-0 rounded-full p-2"
-            >
-              <Image
-                src="/assets/marketplace/favorite.svg"
-                alt=""
-                width={17}
-                height={16}
-                aria-hidden="true"
+          {showFavorite && !product.isOwner && (
+            <div className="-mr-2 -mt-1 shrink-0">
+              <FavoriteButton
+                listingId={String(product.id)}
+                title={product.title}
+                initialIsFavorited={product.isFavorited}
+                compact
               />
-            </Button>
+            </div>
           )}
         </div>
+
+        {showMetadata && (
+          <p className="mt-1 line-clamp-1 text-xs text-[#5b6070]">
+            {product.categoryName} · {formattedDate}
+          </p>
+        )}
 
         <div className="mt-auto flex items-center justify-between gap-1 pt-2">
           <p className="whitespace-nowrap text-lg font-bold leading-7 text-[#002576]">
             {product.price}
           </p>
-          <Badge tone={getStatusTone(product.status)}>
-            {product.status}
-          </Badge>
+          <ListingStatusBadge status={product.statusValue} />
         </div>
+
+        {actions && <div className="mt-3 border-t border-[#e1e2ea] pt-3">{actions}</div>}
       </div>
     </article>
   );

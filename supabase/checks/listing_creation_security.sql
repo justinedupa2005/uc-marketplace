@@ -69,7 +69,7 @@ with checks(check_name, passed) as (
           )
           and bool_or(
             constraint_record.conname = 'listings_price_marketplace_range_check'
-            and pg_get_constraintdef(constraint_record.oid) ilike '%price >%'
+            and pg_get_constraintdef(constraint_record.oid) ilike '%price >=%'
             and pg_get_constraintdef(constraint_record.oid) ilike '%1000000%'
           )
         from pg_constraint as constraint_record
@@ -135,20 +135,20 @@ with checks(check_name, passed) as (
       )
     ),
     (
-      'authenticated updates cannot change owner or lifecycle fields',
-      has_column_privilege(
+      'published listing updates are RPC-only',
+      not has_column_privilege(
         'authenticated', 'public.listings', 'category_id', 'UPDATE'
       )
-      and has_column_privilege(
+      and not has_column_privilege(
         'authenticated', 'public.listings', 'title', 'UPDATE'
       )
-      and has_column_privilege(
+      and not has_column_privilege(
         'authenticated', 'public.listings', 'description', 'UPDATE'
       )
-      and has_column_privilege(
+      and not has_column_privilege(
         'authenticated', 'public.listings', 'price', 'UPDATE'
       )
-      and has_column_privilege(
+      and not has_column_privilege(
         'authenticated', 'public.listings', 'condition', 'UPDATE'
       )
       and not has_column_privilege(
@@ -176,9 +176,6 @@ with checks(check_name, passed) as (
           and table_schema = 'public'
           and table_name = 'listings'
           and privilege_type = 'UPDATE'
-          and column_name not in (
-            'category_id', 'title', 'description', 'price', 'condition'
-          )
       )
     ),
     (
@@ -260,11 +257,17 @@ with checks(check_name, passed) as (
       ), false)
     ),
     (
-      'Storage mutation helper accepts owned non-removed drafts',
+      'Storage mutation helpers separate upload update and delete rules',
       coalesce(
         pg_get_functiondef(to_regprocedure(
-          'private.can_manage_listing_image_object(text,text)'
-        )) ilike '%status <> ''removed''%'
+          'private.can_upload_listing_image_object(text,text)'
+        )) ilike '%status in (''draft'', ''available'', ''reserved'')%'
+        and pg_get_functiondef(to_regprocedure(
+          'private.can_update_listing_image_object(text,text)'
+        )) ilike '%status = ''draft''%'
+        and pg_get_functiondef(to_regprocedure(
+          'private.can_delete_listing_image_object(text,text)'
+        )) ilike '%not exists%listing_images%'
       , false)
     )
 )

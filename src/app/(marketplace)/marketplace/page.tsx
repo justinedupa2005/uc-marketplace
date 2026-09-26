@@ -5,22 +5,79 @@ import { CategoryFilter } from "@/components/category-filter";
 import { FilterBar } from "@/components/filter-bar";
 import { ProductCard } from "@/components/product-card";
 import { SearchBar } from "@/components/search-bar";
-import { getMarketplaceListings } from "@/lib/listings";
+import {
+  getMarketplaceCategories,
+  getMarketplaceListings,
+  type MarketplaceSort,
+} from "@/lib/listings";
 
 export const metadata: Metadata = {
   title: "Marketplace | UC-Market",
   description: "Browse recent listings from verified UC Main students.",
 };
 
-export default async function MarketplacePage() {
-  const { products, error } = await getMarketplaceListings();
+function firstValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function isMarketplaceSort(value: string | undefined): value is MarketplaceSort {
+  return value === "newest" || value === "price_asc" || value === "price_desc";
+}
+
+export default async function MarketplacePage({ searchParams }: {
+  searchParams: Promise<{
+    query?: string | string[];
+    category?: string | string[];
+    sort?: string | string[];
+  }>;
+}) {
+  const queryParams = await searchParams;
+  const search = firstValue(queryParams.query)?.trim().slice(0, 80) ?? "";
+  const requestedCategoryId = firstValue(queryParams.category);
+  const requestedSort = firstValue(queryParams.sort);
+  const sort: MarketplaceSort = isMarketplaceSort(requestedSort)
+    ? requestedSort
+    : "newest";
+  const categoryResult = await getMarketplaceCategories();
+  const selectedCategoryId = categoryResult.categories.some(
+    (category) => category.id === requestedCategoryId,
+  )
+    ? requestedCategoryId
+    : undefined;
+  const { products, error } = await getMarketplaceListings({
+    search,
+    categoryId: selectedCategoryId,
+    sort,
+  });
+  const hasFilters = Boolean(search || selectedCategoryId || sort !== "newest");
 
   return (
     <div className="min-h-screen bg-[#f9f9ff] text-[#121c2a]">
       <main className="mx-auto flex w-full max-w-[1200px] flex-col gap-4 px-6 py-4 pb-24 md:pb-10">
-        <SearchBar />
-        <CategoryFilter />
-        <FilterBar />
+        <SearchBar
+          defaultValue={search}
+          categoryId={selectedCategoryId}
+          sort={sort}
+        />
+        <CategoryFilter
+          categories={categoryResult.categories}
+          selectedCategoryId={selectedCategoryId}
+          query={search}
+          sort={sort}
+        />
+        <FilterBar
+          sort={sort}
+          categoryId={selectedCategoryId}
+          query={search}
+          resultCount={products.length}
+        />
+
+        {categoryResult.error && !error && (
+          <p role="status" className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Category filters are temporarily unavailable. All active listings
+            are still shown.
+          </p>
+        )}
 
         {error ? (
           <section
@@ -49,9 +106,14 @@ export default async function MarketplacePage() {
               ))}
             </div>
             {products.length === 0 && (
-              <p className="py-12 text-center text-sm text-[#444653]">
-                No listings found.
-              </p>
+              <div className="py-12 text-center text-sm text-[#444653]">
+                <p>No listings match your current search and filters.</p>
+                {hasFilters && (
+                  <Link href="/marketplace" className="mt-4 inline-flex min-h-11 items-center rounded-md border border-[#0038a8] px-5 font-semibold text-[#0038a8] hover:bg-[#edf2ff]">
+                    Clear filters
+                  </Link>
+                )}
+              </div>
             )}
           </section>
         )}

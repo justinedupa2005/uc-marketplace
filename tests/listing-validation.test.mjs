@@ -131,8 +131,8 @@ describe("listing category, price, and condition", () => {
     );
   });
 
-  test("accepts positive prices at or below the marketplace maximum", () => {
-    for (const price of ["0.01", "1", "12.5", "12.50", String(LISTING_PRICE_MAX_PHP)]) {
+  test("accepts zero and positive prices at or below the marketplace maximum", () => {
+    for (const price of ["0", "0.00", "0.01", "1", "12.5", "12.50", String(LISTING_PRICE_MAX_PHP)]) {
       assert.equal(
         listingDetailsSchema.safeParse(validDetails({ price })).success,
         true,
@@ -141,9 +141,8 @@ describe("listing category, price, and condition", () => {
     }
   });
 
-  test("rejects zero, negative, excessive, nonnumeric, and over-precise prices", () => {
+  test("rejects negative, excessive, nonnumeric, and over-precise prices", () => {
     for (const price of [
-      "0",
       "-1",
       `${LISTING_PRICE_MAX_PHP}.01`,
       "12.345",
