@@ -25,6 +25,28 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+function firstValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function getMarketplaceReturnPath(value: string | undefined) {
+  if (!value) return null;
+
+  try {
+    const url = new URL(value, "https://uc-marketplace.local");
+    if (
+      url.origin !== "https://uc-marketplace.local" ||
+      url.pathname !== "/marketplace"
+    ) {
+      return null;
+    }
+
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return null;
+  }
+}
+
 export default async function ListingDetailsPage({
   params,
   searchParams,
@@ -33,6 +55,7 @@ export default async function ListingDetailsPage({
   searchParams: Promise<{
     created?: string | string[];
     updated?: string | string[];
+    from?: string | string[];
   }>;
 }) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
@@ -46,6 +69,14 @@ export default async function ListingDetailsPage({
   const wasCreated = query.created === "1" && listing.isOwner;
   const wasUpdated = query.updated === "1" && listing.isOwner;
   const hasMeaningfulUpdate = listing.updatedAt !== listing.createdAt;
+  const marketplaceReturnPath = getMarketplaceReturnPath(firstValue(query.from));
+  const backHref = marketplaceReturnPath ??
+    (listing.isOwner ? "/my-listings" : "/marketplace");
+  const backLabel = marketplaceReturnPath
+    ? "Back to Marketplace"
+    : listing.isOwner
+      ? "Back to My Items"
+      : "Back to Marketplace";
 
   return (
     <main className="min-h-[calc(100vh-4rem)] bg-[#f9f9ff] px-5 pb-28 pt-6 text-[#121c2a] sm:px-6 md:pb-12 md:pt-10">
@@ -61,13 +92,11 @@ export default async function ListingDetailsPage({
         )}
 
         <Link
-          href={listing.isOwner ? "/my-listings" : "/marketplace"}
+          href={backHref}
           className="inline-flex min-h-11 items-center rounded-md text-sm font-semibold text-[#0038a8] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0038a8]"
         >
           <span aria-hidden="true">&larr;</span>
-          <span className="ml-2">
-            {listing.isOwner ? "Back to My Items" : "Back to Marketplace"}
-          </span>
+          <span className="ml-2">{backLabel}</span>
         </Link>
 
         {listing.statusValue === "removed" && (

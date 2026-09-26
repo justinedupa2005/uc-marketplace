@@ -48,6 +48,10 @@ Apply migrations in filename order:
 10. `20260926010000_allow_zero_price_listings.sql`
    - Aligns create/edit validation and database checks so free listings may use
      a price of zero while retaining the existing marketplace price ceiling.
+11. `20260926020000_optimize_marketplace_browsing.sql`
+   - Adds a generated title/description search field and partial indexes for
+     visible-listing newest, category, condition, and price queries without
+     widening RLS or exposing listing history.
 
 ## Applying these migrations to another project
 
@@ -251,6 +255,23 @@ hard deletion is limited to unpublished drafts through
 `discard_listing_draft`. Step 7 intentionally does not create notifications;
 reservation activity is shown directly on `/reservations`.
 
+## Apply Step 8 marketplace search, filtering, and sorting
+
+Apply `20260926020000_optimize_marketplace_browsing.sql`, then run
+`checks/marketplace_browse_performance.sql`. Every named check and the final
+`__all_marketplace_browse_checks_passed__` row must be `true`. Rerun
+`checks/marketplace_authorization_rls_smoke.sql` after applying the migration
+to confirm the existing authorization matrix remains unchanged.
+
+The Step 8 indexes cover only `available` and `reserved` listings, matching the
+normal marketplace query. The stored `search_text` column combines title and
+description so the Data API can use one safely parameterized, case-insensitive
+`ILIKE` filter instead of interpolating user input into raw PostgREST `or()`
+syntax. Trigram and full-text search indexes are intentionally deferred until
+production query plans and listing volume justify their write/storage cost.
+Marketplace queries must still explicitly filter visible statuses because RLS
+also allows a seller to read their own non-public listing history.
+
 ## Bootstrap the first administrator
 
 There is intentionally no public admin registration or role-change RPC. After
@@ -304,8 +325,9 @@ ID or changing browser metadata does not grant administrator access.
 
 The Supabase CLI is installed as a development dependency and this repository
 has a local `supabase/config.toml`. The UC Marketplace project is linked, and
-all eight migration versions are recorded as applied. Running SQL manually does
-not necessarily add entries to `supabase_migrations.schema_migrations`.
+migration versions 1-11 are recorded as applied, including the Step 8 browsing
+optimization. Running SQL manually does not necessarily add entries to
+`supabase_migrations.schema_migrations`.
 
 On a new machine or for a different project, from the repository root run:
 

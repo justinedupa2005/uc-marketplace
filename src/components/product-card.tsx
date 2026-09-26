@@ -25,6 +25,7 @@ type ProductCardProps = {
   product: MarketplaceProduct;
   showFavorite?: boolean;
   showMetadata?: boolean;
+  returnTo?: string;
   actions?: ReactNode;
 };
 
@@ -32,9 +33,12 @@ export function ProductCard({
   product,
   showFavorite = true,
   showMetadata = false,
+  returnTo,
   actions,
 }: ProductCardProps) {
-  const listingHref = `/listing/${product.id}`;
+  const listingHref = returnTo
+    ? { pathname: `/listing/${product.id}`, query: { from: returnTo } }
+    : `/listing/${product.id}`;
   const formattedDate = new Intl.DateTimeFormat("en-PH", {
     dateStyle: "medium",
   }).format(new Date(product.createdAt));

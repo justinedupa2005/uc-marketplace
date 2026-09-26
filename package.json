@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types tests/listing-validation.test.mjs tests/listing-rules.test.mjs"
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types tests/listing-validation.test.mjs tests/listing-rules.test.mjs tests/marketplace-search.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",
