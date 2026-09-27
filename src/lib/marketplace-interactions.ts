@@ -1,17 +1,7 @@
 import "server-only";
 
 import { requireVerifiedActiveStudent } from "@/lib/auth/authorization";
-import { canSendExistingConversation } from "@/lib/listing-rules";
 import { signListingImagePaths } from "@/lib/listings";
-
-type ConversationRow = {
-  id: string;
-  listing_id: string;
-  buyer_id: string;
-  seller_id: string;
-  created_at: string;
-  updated_at: string;
-};
 
 type SafeProfileRow = { id: string; full_name: string };
 type ListingSummaryRow = {
@@ -29,30 +19,6 @@ type ListingInteractionContextRow = {
   listing_id: string;
   title: string;
   status: string;
-};
-
-export type ConversationSummary = {
-  id: string;
-  listingId: string;
-  listingTitle: string;
-  listingStatus: string;
-  otherStudentName: string;
-  updatedAt: string;
-};
-
-export type ConversationMessage = {
-  id: string;
-  senderId: string;
-  body: string;
-  createdAt: string;
-  isMine: boolean;
-};
-
-export type ConversationDetails = ConversationSummary & {
-  currentUserId: string;
-  messages: ConversationMessage[];
-  canSend: boolean;
-  canViewListing: boolean;
 };
 
 export type ReservationSummary = {
@@ -122,113 +88,6 @@ async function getListingInteractionContexts(
       ]),
     ),
     error: Boolean(error),
-  };
-}
-
-export async function getConversations(): Promise<{
-  conversations: ConversationSummary[];
-  error: boolean;
-}> {
-  const { supabase, user } = await requireVerifiedActiveStudent("/messages");
-  const { data, error } = await supabase
-    .from("conversations")
-    .select("id, listing_id, buyer_id, seller_id, created_at, updated_at")
-    .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
-    .order("updated_at", { ascending: false });
-
-  if (error) {
-    console.warn("Unable to load conversations", { code: error.code });
-    return { conversations: [], error: true };
-  }
-
-  const rows = (data ?? []) as ConversationRow[];
-  const [profileResult, contextResult] = await Promise.all([
-    getProfilesById(
-      supabase,
-      rows.map((row) => row.buyer_id === user.id ? row.seller_id : row.buyer_id),
-    ),
-    getListingInteractionContexts(supabase),
-  ]);
-
-  if (profileResult.error || contextResult.error) {
-    return { conversations: [], error: true };
-  }
-
-  return {
-    conversations: rows.map((row) => {
-      const listing = contextResult.contexts.get(row.listing_id);
-      const otherId = row.buyer_id === user.id ? row.seller_id : row.buyer_id;
-      return {
-        id: row.id,
-        listingId: row.listing_id,
-        listingTitle: listing?.title ?? "Listing no longer active",
-        listingStatus: listing?.status ?? "unavailable",
-        otherStudentName: profileResult.profiles.get(otherId) ?? "UC Student",
-        updatedAt: row.updated_at,
-      };
-    }),
-    error: false,
-  };
-}
-
-export async function getConversationDetails(
-  conversationId: string,
-): Promise<{ conversation: ConversationDetails | null; error: "not_found" | "unavailable" | null }> {
-  const { supabase, user } = await requireVerifiedActiveStudent(`/messages/${conversationId}`);
-  const { data, error } = await supabase
-    .from("conversations")
-    .select("id, listing_id, buyer_id, seller_id, created_at, updated_at")
-    .eq("id", conversationId)
-    .maybeSingle();
-
-  if (error) return { conversation: null, error: "unavailable" };
-  if (!data) return { conversation: null, error: "not_found" };
-
-  const row = data as ConversationRow;
-  const otherId = row.buyer_id === user.id ? row.seller_id : row.buyer_id;
-  const [profileResult, contextResult, messageResult] = await Promise.all([
-    getProfilesById(supabase, [otherId]),
-    getListingInteractionContexts(supabase),
-    supabase
-      .from("messages")
-      .select("id, sender_id, body, created_at")
-      .eq("conversation_id", conversationId)
-      .order("created_at", { ascending: true }),
-  ]);
-
-  if (profileResult.error || contextResult.error || messageResult.error) {
-    return { conversation: null, error: "unavailable" };
-  }
-
-  const listing = contextResult.contexts.get(row.listing_id);
-  return {
-    conversation: {
-      id: row.id,
-      listingId: row.listing_id,
-      listingTitle: listing?.title ?? "Listing no longer active",
-      listingStatus: listing?.status ?? "unavailable",
-      otherStudentName: profileResult.profiles.get(otherId) ?? "UC Student",
-      updatedAt: row.updated_at,
-      currentUserId: user.id,
-      canSend: Boolean(
-        listing && canSendExistingConversation(listing.status),
-      ),
-      canViewListing: Boolean(
-        listing && (
-          row.seller_id === user.id ||
-          listing.status === "available" ||
-          listing.status === "reserved"
-        ),
-      ),
-      messages: (messageResult.data ?? []).map((message) => ({
-        id: String(message.id),
-        senderId: String(message.sender_id),
-        body: String(message.body),
-        createdAt: String(message.created_at),
-        isMine: message.sender_id === user.id,
-      })),
-    },
-    error: null,
   };
 }
 

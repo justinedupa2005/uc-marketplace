@@ -587,7 +587,7 @@ export async function getFavoriteListings(
   };
 }
 
-function getAvatarUrl(
+export function getAvatarUrl(
   supabase: AuthorizedAccessContext["supabase"],
   sellerId: string,
   avatarPath: string | null,

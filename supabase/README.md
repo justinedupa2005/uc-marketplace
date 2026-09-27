@@ -56,6 +56,14 @@ Apply migrations in filename order:
    - Adds the newest-saved-first favorites index, an idempotent authenticated
      favorite-state RPC, and a lock-order-safe legacy toggle while preserving
      the existing sold/removed cleanup behavior.
+13. `20260927000000_complete_messaging.sql`
+   - Completes read receipts, adds latest-message and unread indexes, and adds
+     a participant-scoped UI-safe conversation summary RPC without granting
+     authenticated clients direct message writes.
+14. `staged/20260927010000_enable_messaging_realtime.sql`
+   - Idempotently adds only `public.messages` to the `supabase_realtime`
+     publication after the database-only two-account flow has passed. It stays
+     outside `migrations/` until that acceptance gate is complete.
 
 ## Applying these migrations to another project
 
@@ -306,6 +314,81 @@ saved, and a seller cannot save their own listing. The composite primary key
 `(user_id, listing_id)` is the duplicate-prevention constraint; a separate
 surrogate ID is intentionally unnecessary.
 
+## Apply Step 10 messaging
+
+Apply `20260927000000_complete_messaging.sql` first. Before applying the
+Realtime migration, run `checks/messaging_rls_smoke.sql` and complete the
+database-only flow with two separate verified active accounts:
+
+1. The buyer starts a conversation from an available listing and receives the
+   same conversation ID when trying again.
+2. The buyer sends a message and the seller sees it after a refresh.
+3. The seller opens the thread, calls `mark_conversation_read(uuid)`, and the
+   buyer's message receives a `read_at` timestamp.
+4. The seller replies and the buyer sees the reply after a refresh.
+
+The application must use `start_listing_conversation(uuid)`,
+`send_conversation_message(uuid,text)`, and
+`mark_conversation_read(uuid)` for mutations. Authenticated clients retain
+SELECT-only table privileges. The database derives buyer, seller, and sender
+identity from `auth.uid()` and the referenced listing/conversation.
+
+The core migration enforces the stronger non-whitespace message constraint for
+all new writes. It validates that constraint immediately when existing rows are
+clean. If a legacy newline/tab-only message exists, the migration still applies
+but `checks/messaging_security.sql` reports the constraint as unvalidated until
+that row is deliberately reviewed and the constraint is validated.
+
+Use `get_my_conversation_summaries(p_conversation_id uuid default null)` for
+conversation-list and header data. Passing `NULL` returns all conversations for
+the caller; passing an ID returns at most that caller's matching conversation.
+The function exposes only participant-safe profile fields, listing context,
+the latest message, unread count, timestamps, and `can_send`; it does not load
+message history or expose student IDs, account status, verification documents,
+email, or moderation data. A missing or no-longer-eligible profile is labeled
+`Former UC Student`, with no avatar or verification badge, so the projection
+does not reveal why that account is unavailable.
+
+Status behavior remains deliberate:
+
+- `available` and `reserved`: allow new conversations and messages.
+- `sold`: reject new conversations, but preserve and allow messages in an
+  existing conversation.
+- `removed`: preserve readable history while rejecting new conversations and
+  messages.
+- Pending, unverified, suspended, disabled, and administrator accounts cannot
+  use student messaging RPCs or read student conversations.
+- If either participant becomes ineligible, the active participant retains the
+  existing history but the conversation becomes read-only.
+
+Permanent Auth-user deletion retains the pre-existing schema behavior: its
+profile, conversations, and messages cascade away together. Suspension or
+disablement is the non-destructive account state and preserves message history.
+
+The private listing-image policies allow buyers to fetch images only while a
+listing is `available` or `reserved`. The summary therefore returns a sold or
+removed image path only to the listing owner and returns `NULL` to the buyer.
+Do not broaden listing or Storage RLS merely to make sold-listing links or
+thumbnails work; the buyer UI should show retained text context without a live
+listing link in those states.
+
+Only after the database-only two-account flow passes, move
+`staged/20260927010000_enable_messaging_realtime.sql` into `migrations/`, run
+the migration dry run, and apply it. Then run
+`checks/messaging_security.sql`. Every named row and
+`__all_messaging_security_checks_passed__` must be `true`. Test Realtime with
+two separate browser sessions. Subscribe only to message INSERT and read-status
+UPDATE events filtered to the active `conversation_id`, deduplicate by the
+persisted message UUID, and unsubscribe when leaving or switching
+conversations. RLS remains mandatory; Realtime is not a replacement for the
+normal database flow.
+
+```powershell
+Move-Item -LiteralPath .\supabase\staged\20260927010000_enable_messaging_realtime.sql -Destination .\supabase\migrations\20260927010000_enable_messaging_realtime.sql
+npx.cmd supabase db push --dry-run --linked
+npx.cmd supabase db push --linked
+```
+
 ## Bootstrap the first administrator
 
 There is intentionally no public admin registration or role-change RPC. After
@@ -360,9 +443,9 @@ ID or changing browser metadata does not grant administrator access.
 The Supabase CLI is installed as a development dependency and this repository
 has a local `supabase/config.toml`. The UC Marketplace project is linked, and
 migration versions 1-11 are recorded as applied, including the Step 8 browsing
-optimization. Migration 12 must appear there after Step 9 is applied with
-`supabase db push`. Running SQL manually does not necessarily add entries to
-`supabase_migrations.schema_migrations`.
+optimization. Migrations 12-14 must appear there after Steps 9-10 are applied
+with `supabase db push`. Running SQL manually does not necessarily add entries
+to `supabase_migrations.schema_migrations`.
 
 On a new machine or for a different project, from the repository root run:
 
