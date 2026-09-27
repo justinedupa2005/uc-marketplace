@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { ReservationSummaryCard } from "@/components/reservation-summary-card";
-import { getReservations } from "@/lib/marketplace-interactions";
+import { ReservationSummaryCard } from "@/features/reservations/components/reservation-summary-card";
+import { getReservations } from "@/features/reservations/server/queries";
 
 export const metadata: Metadata = {
   title: "Reservations | UC Marketplace",

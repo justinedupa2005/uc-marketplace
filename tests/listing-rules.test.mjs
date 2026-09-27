@@ -12,7 +12,7 @@ import {
   canStartListingConversation,
   getListingStatusLabel,
   isNormallyBrowsableListing,
-} from "../src/lib/listing-rules.ts";
+} from "../src/features/listings/rules.ts";
 
 test("available listings support every normal buyer and owner action", () => {
   assert.equal(isNormallyBrowsableListing("available"), true);

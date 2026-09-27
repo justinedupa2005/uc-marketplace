@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 
-import { logout } from "@/app/auth/actions";
-import { AppHeader } from "@/components/app-header";
+import { logout } from "@/features/auth/actions";
+import { AppHeader } from "@/components/layout/app-header";
 import {
   getAuthorizedDestination,
   isVerifiedActiveStudent,

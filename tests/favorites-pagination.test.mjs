@@ -7,7 +7,7 @@ import {
   FAVORITES_PAGE_SIZE,
   orderListingsByFavoriteIds,
   parseFavoritesSearchParams,
-} from "../src/lib/favorites-pagination.ts";
+} from "../src/features/favorites/pagination.ts";
 
 describe("favorites pagination parameters", () => {
   test("uses page one by default", () => {

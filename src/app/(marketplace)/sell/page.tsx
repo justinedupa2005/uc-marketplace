@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 
 import { requireVerifiedActiveStudent } from "@/lib/auth/authorization";
 
-import { SellForm, type SellCategory } from "./sell-form";
+import type { ListingCategoryOption } from "@/features/listings/types";
+
+import { SellForm } from "./sell-form";
 
 export const metadata: Metadata = {
   title: "Sell an Item | UC Marketplace",
@@ -21,7 +23,7 @@ export default async function SellPage() {
     console.warn("Unable to load sell-page categories", { code: error.code });
   }
 
-  const categories: SellCategory[] = error
+  const categories: ListingCategoryOption[] = error
     ? []
     : (data ?? []).flatMap((category) =>
         typeof category.id === "string" && typeof category.name === "string"

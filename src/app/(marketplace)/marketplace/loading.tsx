@@ -1,4 +1,4 @@
-import { MarketplaceSkeleton } from "@/components/marketplace-skeleton";
+import { MarketplaceSkeleton } from "@/features/listings/components/marketplace-skeleton";
 
 export default function MarketplaceLoading() {
   return (

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 
-import { logout } from "@/app/auth/actions";
+import { logout } from "@/features/auth/actions";
 
 import { requireActiveAdmin } from "./verifications/admin-access";
 

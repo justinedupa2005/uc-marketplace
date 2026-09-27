@@ -10,7 +10,7 @@ import {
   listingFormSchema,
   listingImageSchema,
   MAX_LISTING_IMAGE_BYTES,
-} from "../src/lib/validations/listing.ts";
+} from "../src/features/listings/validation.ts";
 
 const CATEGORY_ID = "11111111-1111-4111-8111-111111111111";
 

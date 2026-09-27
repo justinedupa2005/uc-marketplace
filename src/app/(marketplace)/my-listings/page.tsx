@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { ListingOwnerActions } from "@/components/listing-owner-actions";
-import { ProductCard } from "@/components/product-card";
-import { getSellerListings } from "@/lib/listings";
+import { ListingOwnerActions } from "@/features/listings/components/listing-owner-actions";
+import { ProductCard } from "@/features/listings/components/product-card";
+import { getSellerListings } from "@/features/listings/server/collections";
 
 export const metadata: Metadata = {
   title: "My Items | UC Marketplace",

@@ -8,7 +8,7 @@ import {
   MARKETPLACE_PAGE_SIZE,
   MARKETPLACE_PRICE_RANGE_ERROR,
   parseMarketplaceSearchParams,
-} from "../src/lib/marketplace-search-params.ts";
+} from "../src/features/listings/search-params.ts";
 
 function parse(input = {}) {
   return parseMarketplaceSearchParams(input);

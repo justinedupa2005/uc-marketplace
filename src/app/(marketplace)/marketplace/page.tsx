@@ -1,24 +1,24 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { ActiveFilterChips } from "@/components/active-filter-chips";
-import { CategoryFilter } from "@/components/category-filter";
-import { FilterBar } from "@/components/filter-bar";
-import { MarketplaceEmptyState } from "@/components/marketplace-empty-state";
-import { MarketplaceFilters } from "@/components/marketplace-filters";
-import { MarketplacePagination } from "@/components/marketplace-pagination";
-import { ProductCard } from "@/components/product-card";
-import { SearchBar } from "@/components/search-bar";
+import { ActiveFilterChips } from "@/features/listings/components/active-filter-chips";
+import { CategoryFilter } from "@/features/listings/components/category-filter";
+import { FilterBar } from "@/features/listings/components/filter-bar";
+import { MarketplaceEmptyState } from "@/features/listings/components/marketplace-empty-state";
+import { MarketplaceFilters } from "@/features/listings/components/marketplace-filters";
+import { MarketplacePagination } from "@/features/listings/components/marketplace-pagination";
+import { ProductCard } from "@/features/listings/components/product-card";
+import { SearchBar } from "@/features/listings/components/search-bar";
 import {
   getMarketplaceCategories,
   getMarketplaceListings,
-} from "@/lib/listings";
+} from "@/features/listings/server/browse";
 import {
   buildMarketplaceHref,
   countActiveMarketplaceFilters,
   parseMarketplaceSearchParams,
   type MarketplaceSearchParamsInput,
-} from "@/lib/marketplace-search-params";
+} from "@/features/listings/search-params";
 
 export const metadata: Metadata = {
   title: "Marketplace | UC-Market",

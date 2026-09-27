@@ -3,7 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { logout } from "@/app/auth/actions";
+import { logout } from "@/features/auth/actions";
 import { FormNotification } from "@/components/form-notification";
 import { redirectAuthenticatedUser } from "@/lib/auth/authorization";
 import { usesCodeConfirmation } from "@/lib/auth/confirmation-mode";

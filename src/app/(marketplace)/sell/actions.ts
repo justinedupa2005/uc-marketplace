@@ -11,7 +11,7 @@ import {
   LISTING_IMAGE_EXTENSIONS,
   listingFormSchema,
   type ListingFieldErrors,
-} from "@/lib/validations/listing";
+} from "@/features/listings/validation";
 
 export type CreateListingState = {
   message: string | null;
@@ -136,7 +136,10 @@ export async function createListing(
     ? submittedToken.data
     : previousState.submissionId;
 
-  if (!submittedToken.success || !submissionTokenSchema.safeParse(submissionId).success) {
+  if (
+    !submittedToken.success ||
+    !submissionTokenSchema.safeParse(submissionId).success
+  ) {
     return actionState(
       crypto.randomUUID(),
       "This form expired. Review your information and submit it again.",
@@ -231,7 +234,7 @@ export async function createListing(
         category_id: parsed.data.categoryId,
         title: parsed.data.title,
         description: parsed.data.description,
-        price: parsed.data.price,
+        price: Number(parsed.data.price),
         condition: parsed.data.condition,
       })
       .select("id, status")
@@ -369,8 +372,7 @@ export async function createListing(
     const result = await supabase.rpc("publish_listing", {
       p_listing_id: listingId,
     });
-    publishedListingId =
-      typeof result.data === "string" ? result.data : null;
+    publishedListingId = typeof result.data === "string" ? result.data : null;
     publishError = result.error;
   } catch {
     publishError = { code: "network_error" };

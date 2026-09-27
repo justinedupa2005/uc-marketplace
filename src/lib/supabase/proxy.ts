@@ -6,6 +6,7 @@ import {
   isProtectedPathname,
 } from "@/lib/auth/redirects";
 import { isAuthServiceUnavailable } from "@/lib/auth/errors";
+import type { Database } from "@/types/database";
 
 function redirectWithSessionCookies(
   request: NextRequest,
@@ -52,7 +53,7 @@ function nextWithRequestedPath(request: NextRequest) {
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = nextWithRequestedPath(request);
 
-  const supabase = createServerClient(
+  const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {

@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 
-import { logout } from "@/app/auth/actions";
+import { logout } from "@/features/auth/actions";
 import { FormNotification } from "@/components/form-notification";
 
 import { updatePassword, type ResetPasswordState } from "./actions";

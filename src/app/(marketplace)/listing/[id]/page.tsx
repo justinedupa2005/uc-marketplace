@@ -4,12 +4,15 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 
 import { FormNotification } from "@/components/form-notification";
-import { ConditionBadge, ListingStatusBadge } from "@/components/listing-badges";
-import { ListingBuyerActions } from "@/components/listing-buyer-actions";
-import { ListingImageGallery } from "@/components/listing-image-gallery";
-import { ListingOwnerActions } from "@/components/listing-owner-actions";
-import { SellerCard } from "@/components/seller-card";
-import { getListingDetails } from "@/lib/listings";
+import {
+  ConditionBadge,
+  ListingStatusBadge,
+} from "@/features/listings/components/listing-badges";
+import { ListingBuyerActions } from "@/features/listings/components/listing-buyer-actions";
+import { ListingImageGallery } from "@/features/listings/components/listing-image-gallery";
+import { ListingOwnerActions } from "@/features/listings/components/listing-owner-actions";
+import { SellerCard } from "@/features/listings/components/seller-card";
+import { getListingDetails } from "@/features/listings/server/details";
 
 export const metadata: Metadata = {
   title: "Listing Details | UC Marketplace",

@@ -1,36 +1,65 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# UC Marketplace
 
-## Getting Started
+UC Marketplace is a private marketplace for verified University of Cebu
+students. It uses Next.js App Router, React, TypeScript, Supabase, and Tailwind
+CSS.
 
-First, run the development server:
+## Local development
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Install dependencies and start the development server:
+
+```powershell
+npm.cmd install
+npm.cmd run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The app expects the public Supabase URL and publishable key in `.env.local`.
+Database setup, migration, and security-check instructions live in
+[`supabase/README.md`](supabase/README.md).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Quality checks
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```powershell
+npm.cmd run check
+npm.cmd run build
+```
 
-## Learn More
+`check` runs the TypeScript compiler, ESLint, and the unit-test suite.
 
-To learn more about Next.js, take a look at the following resources:
+## Source organization
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```text
+src/
+  app/          routes, layouts, loading/error UI, and route-private workflows
+  features/     domain UI, actions, client helpers, DTOs, validation, and queries
+  components/   application-wide layout and reusable UI primitives
+  lib/          cross-cutting auth and Supabase infrastructure
+  types/        generated database types and schema composition
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Feature server modules import `server-only`. Client-safe DTOs and utilities
+live outside `server/`, so Client Components never need to import a data-access
+module. Route-specific implementation details can remain colocated under
+Next.js private folders such as `_components` and `_hooks`.
 
-## Deploy on Vercel
+ESLint enforces the most important dependency boundaries:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- feature and shared modules cannot import route-layer implementation details;
+- feature server modules cannot depend on UI components;
+- client-capable components and hooks cannot import feature server modules.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Supabase types
+
+The application clients are parameterized with the public database schema.
+After applying repository migrations to the linked project, regenerate the
+committed output with:
+
+```powershell
+npm.cmd run db:types
+```
+
+Do not edit `src/types/database.generated.ts` by hand. The adjacent
+`src/types/database.ts` composes generated types with any RPC signatures from
+committed migrations that have not yet reached the linked project. Remove a
+temporary overlay after regenerating against a database that includes that
+migration.

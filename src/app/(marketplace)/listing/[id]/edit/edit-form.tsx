@@ -1,53 +1,66 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
-import { startTransition, useActionState, useEffect, useRef, useState } from "react";
+import {
+  startTransition,
+  useActionState,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { FormNotification } from "@/components/form-notification";
-import type { OwnedListingForEdit } from "@/lib/listings";
+import { NavigationLink as Link } from "@/components/navigation-blocker";
+import { FieldError } from "@/components/ui/field-error";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useUnsavedChangesWarning } from "@/features/listings/client/use-unsaved-changes-warning";
+import { ListingFormSection } from "@/features/listings/components/listing-form-section";
+import type {
+  ListingCategoryOption,
+  OwnedListingForEdit,
+} from "@/features/listings/types";
 import {
   getListingFieldErrors,
   LISTING_CONDITION_OPTIONS,
   LISTING_DESCRIPTION_MAX_LENGTH,
+  LISTING_DESCRIPTION_MIN_LENGTH,
+  LISTING_FIELD_ORDER,
   LISTING_PRICE_MAX_PHP,
   LISTING_TITLE_MAX_LENGTH,
+  LISTING_TITLE_MIN_LENGTH,
   listingDetailsSchema,
-  listingImageSchema,
   MAX_LISTING_IMAGES,
   type ListingCondition,
+  type ListingField,
   type ListingFieldErrors,
-} from "@/lib/validations/listing";
+} from "@/features/listings/validation";
 
 import { updateListing, type UpdateListingState } from "./actions";
+import { useEditableListingImages } from "./_hooks/use-editable-listing-images";
 
-export type EditCategory = { id: string; name: string };
-
-type ExistingImage = {
-  kind: "existing";
-  key: string;
-  storagePath: string;
-  previewUrl: string;
-  alt: string;
+const fieldIds: Record<ListingField, string> = {
+  images: "edit-listing-images-section",
+  title: "edit-title",
+  categoryId: "edit-category",
+  description: "edit-description",
+  condition: "edit-condition",
+  price: "edit-price",
 };
 
-type NewImage = {
-  kind: "new";
-  key: string;
-  token: string;
-  file: File;
-  previewUrl: string;
-  alt: string;
-};
-
-type EditableImage = ExistingImage | NewImage;
-
-const inputClass =
-  "h-12 w-full rounded-md border border-[#c4c5d5] bg-white px-4 text-base text-[#121c2a] outline-none transition placeholder:text-[#747685] focus:border-[#0038a8] focus:ring-2 focus:ring-[#0038a8]/15 disabled:cursor-wait disabled:bg-[#f2f3f8]";
-
-function FieldError({ message }: { message?: string }) {
-  return message ? <p role="alert" className="mt-2 text-sm text-red-700">{message}</p> : null;
+function focusListingField(field: ListingField) {
+  window.requestAnimationFrame(() => {
+    const element = document.getElementById(fieldIds[field]);
+    element?.focus({ preventScroll: true });
+    element?.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
 }
+
+type DismissedServerFeedback = {
+  state: UpdateListingState;
+  fields: ListingField[];
+};
 
 export function EditListingForm({
   listing,
@@ -55,7 +68,7 @@ export function EditListingForm({
   categoryLoadError,
 }: {
   listing: OwnedListingForEdit;
-  categories: EditCategory[];
+  categories: ListingCategoryOption[];
   categoryLoadError: boolean;
 }) {
   const initialState: UpdateListingState = { message: null, fieldErrors: {} };
@@ -65,115 +78,78 @@ export function EditListingForm({
   const [categoryId, setCategoryId] = useState(listing.categoryId);
   const [price, setPrice] = useState(listing.price);
   const [condition, setCondition] = useState<ListingCondition>(listing.condition as ListingCondition);
-  const [images, setImages] = useState<EditableImage[]>(
-    listing.images.map((image) => ({
-      kind: "existing",
-      key: `existing:${image.storagePath}`,
-      storagePath: image.storagePath,
-      previewUrl: image.src,
-      alt: image.alt,
-    })),
-  );
   const [clientErrors, setClientErrors] = useState<ListingFieldErrors>({});
-  const [imageSelectionErrors, setImageSelectionErrors] = useState<string[]>([]);
+  const [dismissedServerFeedback, setDismissedServerFeedback] =
+    useState<DismissedServerFeedback | null>(null);
   const [isDirty, setIsDirty] = useState(false);
-  const previewUrls = useRef(new Set<string>());
-  const fieldErrors = { ...actionState.fieldErrors, ...clientErrors };
+  const previousActionStateRef = useRef(actionState);
+  const serverNotificationRef = useRef<HTMLDivElement>(null);
+  const dismissedServerFields =
+    dismissedServerFeedback?.state === actionState
+      ? new Set(dismissedServerFeedback.fields)
+      : null;
+  const showServerFeedback = dismissedServerFeedback?.state !== actionState;
+  const serverFieldErrors: ListingFieldErrors = { ...actionState.fieldErrors };
+  dismissedServerFields?.forEach((field) => delete serverFieldErrors[field]);
+  const fieldErrors = { ...serverFieldErrors, ...clientErrors };
+  const {
+    images,
+    selectionErrors: imageSelectionErrors,
+    chooseImages,
+    removeImage,
+    moveImage,
+    appendImagesTo,
+  } = useEditableListingImages(listing.images, () => edited("images"));
+
+  useUnsavedChangesWarning(isDirty);
 
   useEffect(() => {
-    const urls = previewUrls.current;
-    return () => {
-      urls.forEach((url) => URL.revokeObjectURL(url));
-      urls.clear();
-    };
-  }, []);
+    if (previousActionStateRef.current === actionState) return;
 
-  useEffect(() => {
-    if (!isDirty || pending) return;
-    function preventExit(event: BeforeUnloadEvent) {
-      event.preventDefault();
-      event.returnValue = "";
+    previousActionStateRef.current = actionState;
+    const firstInvalidField = LISTING_FIELD_ORDER.find(
+      (field) => actionState.fieldErrors[field],
+    );
+    if (firstInvalidField) {
+      focusListingField(firstInvalidField);
+      return;
     }
-    window.addEventListener("beforeunload", preventExit);
-    return () => window.removeEventListener("beforeunload", preventExit);
-  }, [isDirty, pending]);
-
-  function edited(field?: keyof ListingFieldErrors) {
-    setIsDirty(true);
-    if (field) {
-      setClientErrors((current) => {
-        if (!current[field]) return current;
-        const next = { ...current };
-        delete next[field];
-        return next;
+    if (actionState.message) {
+      window.requestAnimationFrame(() => {
+        serverNotificationRef.current?.focus({ preventScroll: true });
+        serverNotificationRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
       });
     }
-  }
+  }, [actionState]);
 
-  function chooseImages(event: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.currentTarget.files ?? []);
-    event.currentTarget.value = "";
-    const next = [...images];
-    const errors: string[] = [];
+  function dismissServerFields(fields: readonly ListingField[]) {
+    setDismissedServerFeedback((current) => {
+      const currentFields =
+        current?.state === actionState ? current.fields : [];
+      const nextFields = [...new Set([...currentFields, ...fields])];
 
-    for (const file of files) {
-      if (next.length >= MAX_LISTING_IMAGES) {
-        errors.push(`You can keep a maximum of ${MAX_LISTING_IMAGES} images.`);
-        break;
+      if (
+        current?.state === actionState &&
+        nextFields.length === currentFields.length
+      ) {
+        return current;
       }
-      const validation = listingImageSchema.safeParse(file);
-      if (!validation.success) {
-        errors.push(`${file.name}: ${validation.error.issues[0]?.message ?? "Invalid image."}`);
-        continue;
-      }
-      const duplicate = next.some(
-        (image) => image.kind === "new" && image.file.name === file.name && image.file.size === file.size,
-      );
-      if (duplicate) {
-        errors.push(`${file.name} is already selected.`);
-        continue;
-      }
-
-      const previewUrl = URL.createObjectURL(file);
-      const token = crypto.randomUUID();
-      previewUrls.current.add(previewUrl);
-      next.push({
-        kind: "new",
-        key: `new:${token}`,
-        token,
-        file,
-        previewUrl,
-        alt: file.name,
-      });
-    }
-
-    setImages(next);
-    setImageSelectionErrors(errors);
-    edited("images");
-  }
-
-  function removeImage(key: string) {
-    setImages((current) => {
-      const removed = current.find((image) => image.key === key);
-      if (removed?.kind === "new") {
-        URL.revokeObjectURL(removed.previewUrl);
-        previewUrls.current.delete(removed.previewUrl);
-      }
-      return current.filter((image) => image.key !== key);
+      return { state: actionState, fields: nextFields };
     });
-    setImageSelectionErrors([]);
-    edited("images");
   }
 
-  function moveImage(index: number, direction: -1 | 1) {
-    const target = index + direction;
-    if (target < 0 || target >= images.length) return;
-    setImages((current) => {
-      const next = [...current];
-      [next[index], next[target]] = [next[target], next[index]];
+  function edited(field: ListingField) {
+    setIsDirty(true);
+    dismissServerFields([field]);
+    setClientErrors((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
       return next;
     });
-    edited("images");
   }
 
   function submit(formData: FormData) {
@@ -193,23 +169,15 @@ export function EditListingForm({
     }
     if (Object.keys(nextErrors).length > 0) {
       setClientErrors(nextErrors);
+      dismissServerFields(LISTING_FIELD_ORDER);
+      const firstInvalidField = LISTING_FIELD_ORDER.find(
+        (field) => nextErrors[field],
+      );
+      if (firstInvalidField) focusListingField(firstInvalidField);
       return;
     }
 
-    const newImages = images.filter((image): image is NewImage => image.kind === "new");
-    formData.set(
-      "imageOrder",
-      JSON.stringify(
-        images.map((image) =>
-          image.kind === "existing"
-            ? { kind: "existing", value: image.storagePath }
-            : { kind: "new", value: image.token },
-        ),
-      ),
-    );
-    formData.set("newImageTokens", JSON.stringify(newImages.map((image) => image.token)));
-    formData.delete("newImages");
-    newImages.forEach((image) => formData.append("newImages", image.file, image.file.name));
+    appendImagesTo(formData);
     setClientErrors({});
     startTransition(() => formAction(formData));
   }
@@ -219,7 +187,15 @@ export function EditListingForm({
       <input type="hidden" name="listingId" value={listing.id} />
       <input type="hidden" name="expectedUpdatedAt" value={listing.updatedAt} />
 
-      {actionState.message && <FormNotification variant="error">{actionState.message}</FormNotification>}
+      {showServerFeedback && actionState.message && (
+        <div
+          ref={serverNotificationRef}
+          tabIndex={-1}
+          className="rounded-md outline-none focus:ring-2 focus:ring-[#0038a8]/30"
+        >
+          <FormNotification variant="error">{actionState.message}</FormNotification>
+        </div>
+      )}
       {categoryLoadError && (
         <FormNotification variant="error">
           Categories could not be loaded. Refresh this page before saving your
@@ -227,11 +203,13 @@ export function EditListingForm({
         </FormNotification>
       )}
 
-      <section className="rounded-xl border border-[#c4c5d5]/60 bg-white p-5 shadow-sm sm:p-7">
-        <h2 className="text-xl font-bold">Listing images</h2>
-        <p className="mt-1 text-sm text-[#5b6070]">Keep, remove, add, or reorder up to five images. The first image is the cover.</p>
-
-        <div className="mt-5 flex items-center justify-between gap-4">
+      <ListingFormSection
+        id="edit-listing-images-section"
+        title="Listing images"
+        description="Keep, remove, add, or reorder up to five images. The first image is the cover."
+        contentClassName="mt-5"
+      >
+        <div className="flex items-center justify-between gap-4">
           <label htmlFor="edit-listing-images" className={`inline-flex min-h-11 items-center rounded-md border border-[#0038a8] px-4 text-sm font-semibold text-[#0038a8] ${images.length >= MAX_LISTING_IMAGES || pending ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-[#e9effb]"}`}>
             Add images
           </label>
@@ -244,9 +222,11 @@ export function EditListingForm({
           multiple
           disabled={pending || images.length >= MAX_LISTING_IMAGES}
           onChange={chooseImages}
+          aria-invalid={Boolean(fieldErrors.images)}
+          aria-describedby={fieldErrors.images ? "edit-images-error" : undefined}
           className="sr-only"
         />
-        <FieldError message={fieldErrors.images} />
+        <FieldError id="edit-images-error" message={fieldErrors.images} />
         {imageSelectionErrors.length > 0 && (
           <ul role="alert" className="mt-3 list-disc rounded-md bg-amber-50 px-8 py-3 text-sm text-amber-900">
             {imageSelectionErrors.map((error) => <li key={error}>{error}</li>)}
@@ -268,48 +248,52 @@ export function EditListingForm({
             </li>
           ))}
         </ul>
-      </section>
+      </ListingFormSection>
 
-      <section className="rounded-xl border border-[#c4c5d5]/60 bg-white p-5 shadow-sm sm:p-7">
-        <h2 className="text-xl font-bold">Item details</h2>
-        <div className="mt-6 space-y-5">
+      <ListingFormSection id="edit-listing-details" title="Item details">
+        <div className="space-y-5">
           <div>
             <label htmlFor="edit-title" className="text-sm font-semibold">Title</label>
-            <input id="edit-title" name="title" value={title} maxLength={LISTING_TITLE_MAX_LENGTH} disabled={pending} onChange={(event) => { setTitle(event.target.value); edited("title"); }} className={`mt-2 ${inputClass}`} />
-            <FieldError message={fieldErrors.title} />
+            <Input id="edit-title" name="title" value={title} minLength={LISTING_TITLE_MIN_LENGTH} maxLength={LISTING_TITLE_MAX_LENGTH} required disabled={pending} invalid={Boolean(fieldErrors.title)} aria-describedby={fieldErrors.title ? "edit-title-error" : undefined} onChange={(event) => { setTitle(event.target.value); edited("title"); }} className="mt-2" />
+            <FieldError id="edit-title-error" message={fieldErrors.title} />
           </div>
           <div>
             <label htmlFor="edit-category" className="text-sm font-semibold">Category</label>
-            <select id="edit-category" name="categoryId" value={categoryId} disabled={pending || categoryLoadError} onChange={(event) => { setCategoryId(event.target.value); edited("categoryId"); }} className={`mt-2 ${inputClass}`}>
+            <Select id="edit-category" name="categoryId" value={categoryId} required disabled={pending || categoryLoadError} invalid={Boolean(fieldErrors.categoryId)} aria-describedby={fieldErrors.categoryId ? "edit-category-error" : undefined} onChange={(event) => { setCategoryId(event.target.value); edited("categoryId"); }} className="mt-2">
               <option value="">Select a category</option>
               {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-            </select>
-            <FieldError message={fieldErrors.categoryId} />
+            </Select>
+            <FieldError id="edit-category-error" message={fieldErrors.categoryId} />
           </div>
           <div>
             <label htmlFor="edit-description" className="text-sm font-semibold">Description</label>
-            <textarea id="edit-description" name="description" value={description} maxLength={LISTING_DESCRIPTION_MAX_LENGTH} rows={6} disabled={pending} onChange={(event) => { setDescription(event.target.value); edited("description"); }} className="mt-2 w-full resize-y rounded-md border border-[#c4c5d5] bg-white p-4 outline-none focus:border-[#0038a8] focus:ring-2 focus:ring-[#0038a8]/15" />
-            <FieldError message={fieldErrors.description} />
+            <Textarea id="edit-description" name="description" value={description} minLength={LISTING_DESCRIPTION_MIN_LENGTH} maxLength={LISTING_DESCRIPTION_MAX_LENGTH} rows={6} required disabled={pending} invalid={Boolean(fieldErrors.description)} aria-describedby={fieldErrors.description ? "edit-description-error" : undefined} onChange={(event) => { setDescription(event.target.value); edited("description"); }} className="mt-2" />
+            <FieldError id="edit-description-error" message={fieldErrors.description} />
           </div>
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
               <label htmlFor="edit-condition" className="text-sm font-semibold">Condition</label>
-              <select id="edit-condition" name="condition" value={condition} disabled={pending} onChange={(event) => { setCondition(event.target.value as ListingCondition); edited("condition"); }} className={`mt-2 ${inputClass}`}>
+              <Select id="edit-condition" name="condition" value={condition} required disabled={pending} invalid={Boolean(fieldErrors.condition)} aria-describedby={fieldErrors.condition ? "edit-condition-error" : undefined} onChange={(event) => { setCondition(event.target.value as ListingCondition); edited("condition"); }} className="mt-2">
                 {LISTING_CONDITION_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-              <FieldError message={fieldErrors.condition} />
+              </Select>
+              <FieldError id="edit-condition-error" message={fieldErrors.condition} />
             </div>
             <div>
               <label htmlFor="edit-price" className="text-sm font-semibold">Price (PHP)</label>
-              <input id="edit-price" name="price" type="number" inputMode="decimal" min="0" step="0.01" value={price} disabled={pending} max={LISTING_PRICE_MAX_PHP} onChange={(event) => { setPrice(event.target.value); edited("price"); }} className={`mt-2 ${inputClass}`} />
-              <FieldError message={fieldErrors.price} />
+              <Input id="edit-price" name="price" type="number" inputMode="decimal" min="0" step="0.01" value={price} required disabled={pending} max={LISTING_PRICE_MAX_PHP} invalid={Boolean(fieldErrors.price)} aria-describedby={fieldErrors.price ? "edit-price-error" : undefined} onChange={(event) => { setPrice(event.target.value); edited("price"); }} className="mt-2" />
+              <FieldError id="edit-price-error" message={fieldErrors.price} />
             </div>
           </div>
         </div>
-      </section>
+      </ListingFormSection>
 
       <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-        <Link href={`/listing/${listing.id}`} className="inline-flex min-h-12 items-center justify-center rounded-md border border-[#c4c5d5] px-5 text-sm font-semibold text-[#444653] hover:bg-white">Cancel</Link>
+        <Link
+          href={`/listing/${listing.id}`}
+          className="inline-flex min-h-12 items-center justify-center rounded-md border border-[#c4c5d5] px-5 text-sm font-semibold text-[#444653] hover:bg-white"
+        >
+          Cancel
+        </Link>
         <button type="submit" disabled={pending || categoryLoadError} className="min-h-12 rounded-md bg-[#0038a8] px-6 text-sm font-semibold text-white hover:bg-[#002576] disabled:cursor-wait disabled:opacity-60">{pending ? "Saving changes…" : "Save Changes"}</button>
       </div>
     </form>

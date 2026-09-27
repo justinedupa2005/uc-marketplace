@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { FavoritesGrid } from "@/components/favorites-grid";
+import { FavoritesGrid } from "@/features/favorites/components/favorites-grid";
 import { Pagination } from "@/components/pagination";
 import {
   buildFavoritesHref,
   parseFavoritesSearchParams,
   type FavoritesSearchParamsInput,
-} from "@/lib/favorites-pagination";
-import { getFavoriteListings } from "@/lib/listings";
+} from "@/features/favorites/pagination";
+import { getFavoriteListings } from "@/features/listings/server/collections";
 
 export const metadata: Metadata = {
   title: "Favorites | UC Marketplace",

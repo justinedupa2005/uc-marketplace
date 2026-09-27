@@ -6,7 +6,7 @@ import {
   isValidMessageBody,
   mergeConversationMessages,
   normalizeMessageBody,
-} from "../src/lib/message-utils.ts";
+} from "../src/features/messages/utils.ts";
 
 function message(id, createdAt, overrides = {}) {
   return {

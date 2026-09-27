@@ -3,8 +3,8 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { AccessRefresh } from "@/components/access-refresh";
-import { MobileNavigation } from "@/components/mobile-navigation";
-import { Navbar } from "@/components/navbar";
+import { MobileNavigation } from "@/components/layout/mobile-navigation";
+import { Navbar } from "@/components/layout/navbar";
 import {
   getAuthorizedDestination,
   isVerifiedActiveStudent,

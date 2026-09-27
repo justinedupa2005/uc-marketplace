@@ -2,12 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 
-import { ListingStatusBadge } from "@/components/listing-badges";
-import { ConversationThread } from "@/components/messages/conversation-thread";
-import { ListingThumbnail } from "@/components/messages/listing-thumbnail";
-import { ParticipantAvatar } from "@/components/messages/participant-avatar";
-import { VerificationBadge } from "@/components/seller-card";
-import { getConversationDetails } from "@/lib/messages";
+import { ListingStatusBadge } from "@/features/listings/components/listing-badges";
+import { ConversationThread } from "@/features/messages/components/conversation-thread";
+import { ListingThumbnail } from "@/features/messages/components/listing-thumbnail";
+import { ParticipantAvatar } from "@/features/messages/components/participant-avatar";
+import { VerificationBadge } from "@/features/listings/components/seller-card";
+import { getConversationDetails } from "@/features/messages/server/queries";
 
 export default async function ConversationPage({
   params,

@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { ConversationListItem } from "@/components/messages/conversation-list-item";
-import { getConversations } from "@/lib/messages";
+import { ConversationListItem } from "@/features/messages/components/conversation-list-item";
+import { getConversations } from "@/features/messages/server/queries";
 
 export const metadata: Metadata = {
   title: "Messages | UC Marketplace",

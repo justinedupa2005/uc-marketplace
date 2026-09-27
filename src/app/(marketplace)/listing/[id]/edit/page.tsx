@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 
+import { NavigationLink as Link } from "@/components/navigation-blocker";
 import { requireVerifiedActiveStudent } from "@/lib/auth/authorization";
-import { getOwnedListingForEdit } from "@/lib/listings";
+import { getOwnedListingForEdit } from "@/features/listings/server/details";
+import type { ListingCategoryOption } from "@/features/listings/types";
 
-import { EditListingForm, type EditCategory } from "./edit-form";
+import { EditListingForm } from "./edit-form";
 
 export const metadata: Metadata = {
   title: "Edit Listing | UC Marketplace",
@@ -32,7 +33,7 @@ export default async function EditListingPage({ params }: {
     .select("id, name")
     .eq("is_active", true)
     .order("name", { ascending: true });
-  const categories: EditCategory[] = error
+  const categories: ListingCategoryOption[] = error
     ? []
     : (data ?? []).flatMap((category) =>
         typeof category.id === "string" && typeof category.name === "string"

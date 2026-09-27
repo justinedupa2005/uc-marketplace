@@ -3,7 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { logout } from "@/app/auth/actions";
+import { logout } from "@/features/auth/actions";
 import {
   getAuthorizedDestination,
   getCurrentAccessContext,

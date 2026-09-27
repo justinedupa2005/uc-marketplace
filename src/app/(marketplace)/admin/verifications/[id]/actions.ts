@@ -45,7 +45,7 @@ export async function reviewVerification(
     const { error } = await auth.supabase.rpc("review_verification", {
       p_verification_id: id,
       p_decision: decision,
-      p_rejection_reason: decision === "rejected" ? reason : null,
+      p_rejection_reason: decision === "rejected" ? reason : undefined,
     });
     reviewFailed = error !== null;
     reviewErrorCode = error?.code ?? null;

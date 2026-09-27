@@ -1,5 +1,5 @@
-import { MarketplaceSkeleton } from "@/components/marketplace-skeleton";
-import { FAVORITES_PAGE_SIZE } from "@/lib/favorites-pagination";
+import { MarketplaceSkeleton } from "@/features/listings/components/marketplace-skeleton";
+import { FAVORITES_PAGE_SIZE } from "@/features/favorites/pagination";
 
 export default function FavoritesLoading() {
   return (

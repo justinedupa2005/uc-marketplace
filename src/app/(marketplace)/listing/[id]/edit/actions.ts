@@ -13,7 +13,7 @@ import {
   listingImageSchema,
   MAX_LISTING_IMAGES,
   type ListingFieldErrors,
-} from "@/lib/validations/listing";
+} from "@/features/listings/validation";
 
 const idSchema = z.string().uuid();
 const timestampSchema = z.string().datetime({ offset: true });
@@ -254,7 +254,7 @@ export async function updateListing(
       p_title: details.data.title,
       p_description: details.data.description,
       p_category_id: details.data.categoryId,
-      p_price: details.data.price,
+      p_price: Number(details.data.price),
       p_condition: details.data.condition,
       p_image_paths: finalPaths,
     },
