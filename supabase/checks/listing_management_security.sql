@@ -1,4 +1,5 @@
--- Run after 20260926000000_harden_listing_interaction_lifecycle.sql.
+-- Run after the listing lifecycle migrations, including
+-- 20260928000000_complete_reservations_and_meetups.sql.
 -- Every row, including the summary, must report passed = true.
 
 with rpc_oids(function_oid) as (
@@ -113,7 +114,7 @@ checks(check_name, passed) as (
         'public.send_conversation_message(uuid,text)'
       )) ilike '%for share of listing%'
       and pg_get_functiondef(to_regprocedure(
-        'public.respond_to_listing_reservation(uuid,text)'
+        'public.accept_reservation(uuid)'
       )) ilike '%from public.listings%for update%from public.reservations%for update%'
     ),
     (

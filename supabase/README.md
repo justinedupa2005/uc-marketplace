@@ -64,6 +64,10 @@ Apply migrations in filename order:
    - Idempotently adds only `public.messages` to the `supabase_realtime`
      publication after the database-only two-account flow has passed. It stays
      outside `migrations/` until that acceptance gate is complete.
+15. `20260928000000_complete_reservations_and_meetups.sql`
+   - Completes reservation history, private meetup scheduling, atomic
+     acceptance/cancellation/sale RPCs, participant messaging, and retained
+     sold favorites. Run the Step 11 preflight before applying it.
 
 ## Applying these migrations to another project
 
@@ -314,6 +318,10 @@ saved, and a seller cannot save their own listing. The composite primary key
 `(user_id, listing_id)` is the duplicate-prevention constraint; a separate
 surrogate ID is intentionally unnecessary.
 
+Step 11 supersedes the sold cleanup rule: existing favorites remain saved after
+a sale and show Sold. Removed listings still clear favorites, and sold listings
+cannot be newly saved.
+
 ## Apply Step 10 messaging
 
 Apply `20260927000000_complete_messaging.sql` first. Before applying the
@@ -361,9 +369,10 @@ Status behavior remains deliberate:
 - If either participant becomes ineligible, the active participant retains the
   existing history but the conversation becomes read-only.
 
-Permanent Auth-user deletion retains the pre-existing schema behavior: its
-profile, conversations, and messages cascade away together. Suspension or
-disablement is the non-destructive account state and preserves message history.
+Before Step 11, permanent Auth-user deletion cascades its profile,
+conversations, and messages. Step 11 blocks hard deletion of listing owners
+and reservation participants to preserve transaction history and prevent
+orphaned reserved listings. Use suspension or disablement for these accounts.
 
 The private listing-image policies allow buyers to fetch images only while a
 listing is `available` or `reserved`. The summary therefore returns a sold or
@@ -371,6 +380,11 @@ removed image path only to the listing owner and returns `NULL` to the buyer.
 Do not broaden listing or Storage RLS merely to make sold-listing links or
 thumbnails work; the buyer UI should show retained text context without a live
 listing link in those states.
+
+Step 11 adds narrowly scoped private image reads for verified active
+conversation/reservation participants and existing sold-favorite owners.
+Sold listing detail access is still restricted to the seller and owners of an
+existing favorite; removed listing details remain hidden from buyers.
 
 Only after the database-only two-account flow passes, move
 `staged/20260927010000_enable_messaging_realtime.sql` into `migrations/`, run
@@ -388,6 +402,47 @@ Move-Item -LiteralPath .\supabase\staged\20260927010000_enable_messaging_realtim
 npx.cmd supabase db push --dry-run --linked
 npx.cmd supabase db push --linked
 ```
+
+## Apply Step 11 reservations and meetups
+
+Run `checks/reservation_meetup_preflight.sql` before applying
+`20260928000000_complete_reservations_and_meetups.sql`. All issue counts must
+be zero. The migration backfills legacy response/completion timestamps and
+fails atomically if reservation/listing history is inconsistent.
+
+After reconciling migration history, preview with
+`npx.cmd supabase db push --dry-run --linked`, then apply the new migration
+once. Run these checks afterward:
+
+1. `checks/reservation_meetup_security.sql`
+2. `checks/reservation_meetup_rls_smoke.sql`
+3. `checks/favorites_security.sql` and `checks/favorites_rls_smoke.sql`
+4. `checks/listing_management_security.sql` and
+   `checks/listing_management_rls_smoke.sql`
+5. `checks/authorization_hardening_security.sql` and
+   `checks/marketplace_authorization_rls_smoke.sql`
+6. `checks/messaging_rls_smoke.sql`
+
+All named checks and smoke-test summaries must pass. Smoke tests create only
+disposable accounts/resources and remove their fixtures before committing.
+Do not substitute privileged SQL Editor reads for the authenticated-role matrix.
+
+The frontend uses reservation RPCs exclusively; direct reservation/meetup
+writes remain revoked. Meetup edits send the `updated_at` value captured when
+the form opened. A stale edit fails instead of overwriting newer details.
+Acceptance reserves the item and rejects competing requests in one transaction;
+cancellation restores availability and cancels any active meetup; seller sale
+completion updates the listing, reservation, and any meetup together.
+
+Test separate verified active buyer/seller browser sessions through request,
+acceptance, meetup creation/editing, cancellation, and completion, refreshing
+each page. Add a second buyer and two seller tabs to verify competing acceptance
+still produces one accepted reservation. Complete the in-person exchange before
+confirming Mark Sold. No payment is processed in the application.
+
+Regenerate database types after applying the migration and remove the applied
+reservation additions from the pending schema overlay in
+`src/types/database.ts`. This migration is required for the Step 11 UI.
 
 ## Bootstrap the first administrator
 

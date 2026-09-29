@@ -95,12 +95,14 @@ from (
             ('categories', 'Verified students can read active categories'),
             ('categories', 'Admins can read all categories'),
             ('listings', 'Verified students can read marketplace listings'),
+            ('listings', 'Students can read their favorited sold listings'),
             ('listings', 'Verified students can read their own listings'),
             ('listings', 'Admins can read all listings'),
             ('listings', 'Verified students can create their listings'),
             ('listings', 'Verified students can update their listings'),
             ('listings', 'Verified students can delete their listings'),
             ('listing_images', 'Verified students can read marketplace listing images'),
+            ('listing_images', 'Students can read favorited sold listing images'),
             ('listing_images', 'Verified students can read their own listing images'),
             ('listing_images', 'Admins can read all listing images'),
             ('listing_images', 'Verified students can add their listing images'),
@@ -122,10 +124,19 @@ from (
             'Listing deletes require verified ownership',
             'Verified students can delete their listings'
           )
-          and coalesce(qual, '') ilike '%removed%'
           and (
-            cmd = 'DELETE'
-            or coalesce(with_check, '') ilike '%removed%'
+            (
+              cmd = 'DELETE'
+              and coalesce(qual, '') ilike '%status = ''draft''%'
+            )
+            or (
+              cmd = 'UPDATE'
+              and coalesce(qual, '') ilike '%status%draft%available%reserved%'
+              and coalesce(qual, '') not ilike '%removed%'
+              and coalesce(with_check, '')
+                ilike '%status%draft%available%reserved%'
+              and coalesce(with_check, '') not ilike '%removed%'
+            )
           )
       )
     ),
@@ -147,6 +158,10 @@ from (
           and (
             coalesce(qual, '') ilike '%removed%'
             or coalesce(with_check, '') ilike '%removed%'
+            or (
+              cmd = 'INSERT'
+              and coalesce(with_check, '') ilike '%listings.status = ''draft''%'
+            )
           )
       )
     ),
@@ -262,12 +277,14 @@ select
         ('categories', 'Verified students can read active categories'),
         ('categories', 'Admins can read all categories'),
         ('listings', 'Verified students can read marketplace listings'),
+        ('listings', 'Students can read their favorited sold listings'),
         ('listings', 'Verified students can read their own listings'),
         ('listings', 'Admins can read all listings'),
         ('listings', 'Verified students can create their listings'),
         ('listings', 'Verified students can update their listings'),
         ('listings', 'Verified students can delete their listings'),
         ('listing_images', 'Verified students can read marketplace listing images'),
+        ('listing_images', 'Students can read favorited sold listing images'),
         ('listing_images', 'Verified students can read their own listing images'),
         ('listing_images', 'Admins can read all listing images'),
         ('listing_images', 'Verified students can add their listing images'),
@@ -286,8 +303,19 @@ select
         'Listing deletes require verified ownership',
         'Verified students can delete their listings'
       )
-      and coalesce(qual, '') ilike '%removed%'
-      and (cmd = 'DELETE' or coalesce(with_check, '') ilike '%removed%')
+      and (
+        (
+          cmd = 'DELETE'
+          and coalesce(qual, '') ilike '%status = ''draft''%'
+        )
+        or (
+          cmd = 'UPDATE'
+          and coalesce(qual, '') ilike '%status%draft%available%reserved%'
+          and coalesce(qual, '') not ilike '%removed%'
+          and coalesce(with_check, '') ilike '%status%draft%available%reserved%'
+          and coalesce(with_check, '') not ilike '%removed%'
+        )
+      )
   ) as removed_listings_locked,
   (
     select count(*) = 6
@@ -305,6 +333,10 @@ select
       and (
         coalesce(qual, '') ilike '%removed%'
         or coalesce(with_check, '') ilike '%removed%'
+        or (
+          cmd = 'INSERT'
+          and coalesce(with_check, '') ilike '%listings.status = ''draft''%'
+        )
       )
   ) as removed_listing_images_locked,
   pg_get_functiondef(

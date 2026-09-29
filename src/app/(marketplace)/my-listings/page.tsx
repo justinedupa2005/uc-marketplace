@@ -90,7 +90,14 @@ export default async function MyListingsPage({ searchParams }: {
                 product={product}
                 showFavorite={false}
                 showMetadata
-                actions={<ListingOwnerActions listingId={String(product.id)} status={product.statusValue} compact />}
+                actions={
+                  <ListingOwnerActions
+                    listingId={String(product.id)}
+                    status={product.statusValue}
+                    reservationOverview={product.reservationOverview}
+                    compact
+                  />
+                }
               />
             ))}
           </div>

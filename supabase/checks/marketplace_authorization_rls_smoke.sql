@@ -1106,6 +1106,13 @@ delete from storage.objects
 where bucket_id = 'listing-images'
   and owner_id in (select id::text from pg_temp.authz_subjects);
 
+delete from public.reservations
+where buyer_id in (select id from pg_temp.authz_subjects)
+  or seller_id in (select id from pg_temp.authz_subjects);
+
+delete from public.listings
+where seller_id in (select id from pg_temp.authz_subjects);
+
 delete from auth.users
 where id in (select id from pg_temp.authz_subjects);
 

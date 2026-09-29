@@ -21,7 +21,7 @@ test("available listings support every normal buyer and owner action", () => {
   assert.equal(canRequestListingReservation("available"), true);
   assert.equal(canReportListing("available"), true);
   assert.equal(canOwnerEditListing("available"), true);
-  assert.equal(canOwnerMarkListingSold("available"), true);
+  assert.equal(canOwnerMarkListingSold("available"), false);
   assert.equal(canOwnerRemoveListing("available"), true);
 });
 
@@ -31,6 +31,7 @@ test("reserved listings remain visible but cannot receive a new reservation", ()
   assert.equal(canStartListingConversation("reserved"), true);
   assert.equal(canRequestListingReservation("reserved"), false);
   assert.equal(canOwnerEditListing("reserved"), true);
+  assert.equal(canOwnerMarkListingSold("reserved"), false);
 });
 
 test("sold and removed listings reject new buyer interactions", () => {

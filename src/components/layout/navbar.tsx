@@ -14,6 +14,7 @@ const desktopLinks = [
   { href: "/marketplace", label: "Home" },
   { href: "/sell", label: "Sell" },
   { href: "/messages", label: "Messages" },
+  { href: "/reservations", label: "Reservations" },
   { href: "/favorites", label: "Saved" },
   { href: "/my-listings", label: "My Items" },
   { href: "/profile", label: "Profile" },

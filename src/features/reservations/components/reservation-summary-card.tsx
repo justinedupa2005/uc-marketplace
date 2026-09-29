@@ -1,77 +1,171 @@
-"use client";
-
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useState, useTransition } from "react";
 
-import { ActionNotice } from "@/components/action-notice";
+import { VerificationBadge } from "@/features/listings/components/seller-card";
+import { ReservationActionPanel } from "@/features/reservations/components/reservation-action-panel";
 import {
-  cancelReservation,
-  respondToReservation,
-} from "@/features/reservations/actions";
+  MeetupStatusBadge,
+  ReservationStatusBadge,
+} from "@/features/reservations/components/reservation-status-badge";
 import type { ReservationSummary } from "@/features/reservations/types";
 
-const statusClasses: Record<ReservationSummary["status"], string> = {
-  pending: "bg-amber-100 text-amber-900",
-  accepted: "bg-blue-100 text-blue-900",
-  rejected: "bg-red-50 text-red-800",
-  cancelled: "bg-slate-100 text-slate-700",
-  completed: "bg-emerald-100 text-emerald-900",
-};
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en-PH", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Manila",
+  }).format(new Date(value));
+}
 
-export function ReservationSummaryCard({ reservation }: { reservation: ReservationSummary }) {
-  const [pending, startTransition] = useTransition();
-  const [notice, setNotice] = useState<{ message: string; variant: "success" | "error" } | null>(null);
-  const dismissNotice = useCallback(() => setNotice(null), []);
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+}
 
-  function respond(decision: "accepted" | "rejected") {
-    if (decision === "accepted" && !window.confirm("Accept this reservation request and mark the listing reserved?")) return;
-    startTransition(async () => {
-      const result = await respondToReservation(reservation.id, decision);
-      setNotice({ message: result.message, variant: result.ok ? "success" : "error" });
-    });
-  }
-
-  function cancel() {
-    if (!window.confirm("Cancel this reservation request?")) return;
-    startTransition(async () => {
-      const result = await cancelReservation(reservation.id);
-      setNotice({ message: result.message, variant: result.ok ? "success" : "error" });
-    });
-  }
-
+export function ReservationSummaryCard({
+  reservation,
+}: {
+  reservation: ReservationSummary;
+}) {
   return (
-    <>
-      <article className="overflow-hidden rounded-2xl border border-[#c4c5d5] bg-white shadow-sm">
-        <div className="relative h-44 bg-[#eff3ff]">
-          {reservation.imageUrl ? (
-            <Image src={reservation.imageUrl} alt={reservation.listingTitle} fill unoptimized sizes="(max-width: 767px) 100vw, 50vw" className="object-cover" />
+    <article className="overflow-hidden rounded-2xl border border-[#c4c5d5] bg-white shadow-sm">
+      <div className="grid sm:grid-cols-[160px_minmax(0,1fr)]">
+        <div className="relative min-h-44 bg-[#eff3ff] sm:min-h-full">
+          {reservation.listing.imageUrl ? (
+            <Image
+              src={reservation.listing.imageUrl}
+              alt={reservation.listing.title}
+              fill
+              unoptimized
+              sizes="(max-width: 639px) 100vw, 160px"
+              className="object-cover"
+            />
           ) : (
-            <div className="flex size-full items-center justify-center text-sm text-[#747685]">No image available</div>
-          )}
-          <span className={`absolute right-3 top-3 rounded-full px-2.5 py-1 text-xs font-bold capitalize ${statusClasses[reservation.status]}`}>{reservation.status}</span>
-        </div>
-        <div className="p-5">
-          {reservation.canViewListing ? (
-            <Link href={`/listing/${reservation.listingId}`} className="line-clamp-2 text-lg font-bold hover:text-[#0038a8] hover:underline">{reservation.listingTitle}</Link>
-          ) : (
-            <h2 className="line-clamp-2 text-lg font-bold">{reservation.listingTitle}</h2>
-          )}
-          <p className="mt-2 text-sm text-[#444653]">{reservation.isIncoming ? "Buyer" : "Seller"}: {reservation.otherStudentName}</p>
-          <time dateTime={reservation.createdAt} className="mt-1 block text-xs text-[#747685]">Requested {new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short" }).format(new Date(reservation.createdAt))}</time>
-
-          {reservation.isIncoming && reservation.status === "pending" && (
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <button type="button" disabled={pending} onClick={() => respond("accepted")} className="min-h-10 rounded-md bg-[#0038a8] px-3 text-sm font-semibold text-white disabled:opacity-60">Accept</button>
-              <button type="button" disabled={pending} onClick={() => respond("rejected")} className="min-h-10 rounded-md border border-red-300 px-3 text-sm font-semibold text-red-700 disabled:opacity-60">Decline</button>
+            <div className="flex size-full min-h-44 items-center justify-center text-sm text-[#747685]">
+              No image available
             </div>
           )}
-          {!reservation.isIncoming && ["pending", "accepted"].includes(reservation.status) && (
-            <button type="button" disabled={pending} onClick={cancel} className="mt-4 min-h-10 w-full rounded-md border border-red-300 px-3 text-sm font-semibold text-red-700 disabled:opacity-60">Cancel Request</button>
-          )}
         </div>
-      </article>
-      <ActionNotice message={notice?.message ?? null} variant={notice?.variant ?? "success"} onDismiss={dismissNotice} />
-    </>
+
+        <div className="min-w-0 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-xs font-bold uppercase tracking-[0.08em] text-[#747685]">
+                {reservation.viewerRole === "seller" ? "Selling" : "Buying"}
+              </p>
+              {reservation.listing.canView ? (
+                <Link
+                  href={`/listing/${reservation.listing.id}`}
+                  className="mt-1 block line-clamp-2 text-lg font-bold hover:text-[#0038a8] hover:underline"
+                >
+                  {reservation.listing.title}
+                </Link>
+              ) : (
+                <h2 className="mt-1 line-clamp-2 text-lg font-bold">
+                  {reservation.listing.title}
+                </h2>
+              )}
+            </div>
+            <ReservationStatusBadge status={reservation.status} />
+          </div>
+
+          <p className="mt-2 text-lg font-bold text-[#002576]">
+            {reservation.listing.price}
+          </p>
+
+          <div className="mt-4 flex items-center gap-3">
+            <div className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#e6eeff] text-xs font-bold text-[#002576]">
+              {reservation.otherStudent.avatarUrl ? (
+                <Image
+                  src={reservation.otherStudent.avatarUrl}
+                  alt=""
+                  fill
+                  unoptimized
+                  sizes="36px"
+                  className="object-cover"
+                />
+              ) : (
+                <span aria-hidden="true">
+                  {initials(reservation.otherStudent.name) || "UC"}
+                </span>
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">
+                {reservation.viewerRole === "seller" ? "Buyer" : "Seller"}: {reservation.otherStudent.name}
+              </p>
+              {reservation.otherStudent.isVerified && (
+                <div className="mt-1.5">
+                  <VerificationBadge />
+                </div>
+              )}
+              <time dateTime={reservation.createdAt} className="mt-1 block text-xs text-[#747685]">
+                Requested {formatDate(reservation.createdAt)}
+              </time>
+            </div>
+          </div>
+
+          {reservation.message && (
+            <p className="mt-4 line-clamp-2 rounded-lg bg-[#f7f8fc] px-3 py-2 text-sm leading-6 text-[#444653]">
+              &ldquo;{reservation.message}&rdquo;
+            </p>
+          )}
+
+          {reservation.meetup && (
+            <div
+              className={`mt-4 rounded-lg border px-3 py-2 text-sm ${
+                reservation.meetup.status === "cancelled"
+                  ? "border-slate-200 bg-slate-50 text-slate-700"
+                  : reservation.meetup.status === "completed"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                    : "border-violet-200 bg-violet-50 text-violet-900"
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-semibold">
+                  {reservation.meetup.status === "cancelled"
+                    ? "Meetup cancelled"
+                    : reservation.meetup.status === "completed"
+                      ? "Meetup completed"
+                      : reservation.meetup.status === "proposed"
+                        ? "Meetup proposed"
+                        : "Meetup scheduled"}
+                </span>
+                <MeetupStatusBadge status={reservation.meetup.status} />
+              </div>
+              <p className="mt-1">
+                {formatDate(reservation.meetup.scheduledAt)} at {reservation.meetup.locationName}
+              </p>
+            </div>
+          )}
+
+          <div className="mt-5 border-t border-[#e1e2ea] pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Link
+                href={`/reservations/${reservation.id}`}
+                className="inline-flex min-h-9 items-center rounded-md text-sm font-semibold text-[#0038a8] hover:underline"
+              >
+                View Details
+              </Link>
+              <ReservationActionPanel
+                reservationId={reservation.id}
+                role={reservation.viewerRole}
+                status={reservation.status}
+                listingStatus={reservation.listing.status}
+                meetup={reservation.meetup}
+                conversationId={reservation.conversationId}
+                listingTitle={reservation.listing.title}
+                participantName={reservation.otherStudent.name}
+                compact
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
   );
 }

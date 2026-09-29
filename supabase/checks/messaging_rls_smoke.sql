@@ -798,6 +798,11 @@ select pg_temp.step10_messaging_expect_rejected(
 
 reset role;
 
+delete from public.reservations
+where buyer_id in (select id from pg_temp.step10_messaging_subjects)
+  or seller_id in (select id from pg_temp.step10_messaging_subjects);
+delete from public.listings
+where seller_id in (select id from pg_temp.step10_messaging_subjects);
 delete from auth.users
 where id in (select id from pg_temp.step10_messaging_subjects);
 delete from public.categories

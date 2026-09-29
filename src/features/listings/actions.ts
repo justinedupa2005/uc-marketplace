@@ -80,32 +80,6 @@ export async function startListingConversation(
   };
 }
 
-export async function requestListingReservation(
-  listingId: string,
-): Promise<ListingActionResult> {
-  const parsedId = listingIdSchema.safeParse(listingId);
-  if (!parsedId.success) return invalidRequest();
-
-  const { supabase } = await requireVerifiedActiveStudent(
-    `/listing/${parsedId.data}`,
-  );
-  const { error } = await supabase.rpc("request_listing_reservation", {
-    p_listing_id: parsedId.data,
-  });
-
-  if (error) {
-    logActionFailure("reservation", error.code);
-    const message =
-      error.code === "23505"
-        ? "You already have an active reservation request for this item."
-        : "This item is no longer available for reservation.";
-    return invalidRequest(message);
-  }
-
-  refreshListingPaths(parsedId.data);
-  return { ok: true, message: "Reservation request sent to the seller." };
-}
-
 export async function submitListingReport(
   listingId: string,
   reason: string,
@@ -140,10 +114,10 @@ export async function submitListingReport(
 
 export async function changeOwnedListingStatus(
   listingId: string,
-  targetStatus: "sold" | "removed",
+  targetStatus: "removed",
 ): Promise<ListingActionResult> {
   const parsed = z
-    .object({ listingId: listingIdSchema, targetStatus: z.enum(["sold", "removed"]) })
+    .object({ listingId: listingIdSchema, targetStatus: z.literal("removed") })
     .safeParse({ listingId, targetStatus });
   if (!parsed.success) return invalidRequest();
 
@@ -163,9 +137,6 @@ export async function changeOwnedListingStatus(
   refreshListingPaths(parsed.data.listingId);
   return {
     ok: true,
-    message:
-      parsed.data.targetStatus === "sold"
-        ? "Listing marked as sold."
-        : "Listing removed from marketplace browsing.",
+    message: "Listing removed from marketplace browsing.",
   };
 }

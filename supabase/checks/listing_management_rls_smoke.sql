@@ -470,19 +470,31 @@ select
 from public.listing_reports
 where listing_id = (select id from pg_temp.step7_resources where label = 'listing');
 
-select public.set_owned_listing_status(
-  (select id from pg_temp.step7_resources where label = 'listing'),
-  'sold'
+insert into pg_temp.step7_runtime (label, id)
+select
+  'buyer_meetup',
+  public.upsert_meetup(
+    (select id from pg_temp.step7_runtime where label = 'buyer_reservation'),
+    'UC Main Campus Lobby',
+    'Beside the security desk',
+    now() + interval '1 day',
+    'Disposable meetup used by the Step 7 compatibility matrix.'
+  );
+
+select public.complete_sale(
+  (select id from pg_temp.step7_runtime where label = 'buyer_reservation')
 );
 
 insert into pg_temp.step7_results
 select
-  'mark sold completes accepted reservation and preserves listing',
+  'complete sale closes listing reservation and meetup atomically',
   (select status = 'sold' from public.listings
    where id = (select id from pg_temp.step7_resources where label = 'listing'))
   and (select status = 'completed' from public.reservations
-       where id = (select id from pg_temp.step7_runtime where label = 'buyer_reservation')),
-  'sold and completed states checked';
+       where id = (select id from pg_temp.step7_runtime where label = 'buyer_reservation'))
+  and (select status = 'completed' from public.meetups
+       where id = (select id from pg_temp.step7_runtime where label = 'buyer_meetup')),
+  'sold and both completed states checked';
 
 reset role;
 
@@ -698,6 +710,11 @@ reset role;
 delete from storage.objects
 where bucket_id = 'listing-images'
   and owner_id in (select id::text from pg_temp.step7_subjects);
+delete from public.reservations
+where buyer_id in (select id from pg_temp.step7_subjects)
+  or seller_id in (select id from pg_temp.step7_subjects);
+delete from public.listings
+where seller_id in (select id from pg_temp.step7_subjects);
 delete from auth.users where id in (select id from pg_temp.step7_subjects);
 delete from public.categories
 where id = (select id from pg_temp.step7_resources where label = 'category');

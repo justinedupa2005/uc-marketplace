@@ -53,6 +53,15 @@ export type ListingSeller = {
   isVerified: boolean;
 };
 
+export type ListingReservationOverview = {
+  pendingCount: number;
+  acceptedReservation: {
+    id: string;
+    buyerName: string;
+    buyerIsVerified: boolean;
+  } | null;
+};
+
 export type ListingDetails = {
   id: string;
   sellerId: string;
@@ -67,7 +76,11 @@ export type ListingDetails = {
   updatedAt: string;
   isOwner: boolean;
   isFavorited: boolean;
-  activeReservation: { id: string; status: string } | null;
+  activeReservation: {
+    id: string;
+    status: "pending" | "accepted";
+  } | null;
+  reservationOverview: ListingReservationOverview | null;
   existingConversationId: string | null;
   seller: ListingSeller;
   images: ListingDetailsImage[];

@@ -1,4 +1,5 @@
--- Self-contained transactional Step 9 favorite RPC/RLS matrix.
+-- Self-contained transactional favorite RPC/RLS matrix, including the
+-- Step 11 reservation-owned sold transition.
 -- Fixtures are removed before commit. The final row must report all_passed.
 
 begin;
@@ -37,6 +38,11 @@ create temporary table step9_favorite_runtime (
   state boolean not null
 );
 
+create temporary table step9_favorite_ids (
+  label text primary key,
+  id uuid not null
+);
+
 create temporary table step9_favorite_results (
   scenario text primary key,
   passed boolean not null,
@@ -46,6 +52,7 @@ create temporary table step9_favorite_results (
 grant select on pg_temp.step9_favorite_subjects to anon, authenticated;
 grant select on pg_temp.step9_favorite_resources to anon, authenticated;
 grant select, insert on pg_temp.step9_favorite_runtime to authenticated;
+grant select, insert on pg_temp.step9_favorite_ids to authenticated;
 grant select, insert on pg_temp.step9_favorite_results to anon, authenticated;
 
 create or replace function pg_temp.step9_favorite_expect_rejected(
@@ -158,6 +165,20 @@ select
   end
 from pg_temp.step9_favorite_resources as resource
 where resource.label like 'listing_%';
+
+insert into public.listing_images (
+  listing_id, storage_path, is_cover, sort_order
+)
+select
+  listing.id,
+  listing.seller_id::text || '/' || listing.id::text || '/favorite-cover.jpg',
+  true,
+  0
+from public.listings as listing
+where listing.id in (
+  select id from pg_temp.step9_favorite_resources
+  where label in ('listing_lifecycle', 'listing_available')
+);
 
 -- Anonymous callers cannot read private favorites or invoke either RPC.
 set local role anon;
@@ -392,7 +413,16 @@ where listing_id = (
   where label = 'listing_available'
 );
 
--- Add a favorite that a later sold transition must remove.
+-- Add a favorite that a later sold transition must preserve as history.
+insert into pg_temp.step9_favorite_runtime (label, state)
+select
+  'history_without_transaction_add',
+  public.set_listing_favorite(
+    (select id from pg_temp.step9_favorite_resources
+     where label = 'listing_available'),
+    true
+  );
+
 insert into pg_temp.step9_favorite_runtime (label, state)
 select
   'lifecycle_add',
@@ -400,6 +430,15 @@ select
     (select id from pg_temp.step9_favorite_resources
      where label = 'listing_lifecycle'),
     true
+  );
+
+insert into pg_temp.step9_favorite_ids (label, id)
+select
+  'lifecycle_reservation',
+  public.request_reservation(
+    (select id from pg_temp.step9_favorite_resources
+     where label = 'listing_lifecycle'),
+    'Disposable reservation for favorite lifecycle coverage.'
   );
 
 reset role;
@@ -431,28 +470,72 @@ select pg_temp.step9_favorite_expect_rejected(
   'P0002'
 );
 
-select public.set_owned_listing_status(
-  (select id from pg_temp.step9_favorite_resources
-   where label = 'listing_lifecycle'),
-  'sold'
+select public.accept_reservation(
+  (select id from pg_temp.step9_favorite_ids
+   where label = 'lifecycle_reservation')
+);
+
+select public.complete_sale(
+  (select id from pg_temp.step9_favorite_ids
+   where label = 'lifecycle_reservation')
 );
 
 reset role;
 
 insert into pg_temp.step9_favorite_results
 select
-  'sold transition removes existing favorites',
+  'sold transition preserves existing favorites',
   (select status = 'sold' from public.listings where id = (
     select id from pg_temp.step9_favorite_resources
     where label = 'listing_lifecycle'
   ))
-    and count(*) = 0,
+    and count(*) = 1,
   'favorites remaining after sold: ' || count(*)::text
 from public.favorites
 where listing_id = (
   select id from pg_temp.step9_favorite_resources
   where label = 'listing_lifecycle'
 );
+
+select set_config(
+  'request.jwt.claim.sub',
+  (select id::text from pg_temp.step9_favorite_subjects where label = 'buyer'),
+  true
+);
+select set_config(
+  'request.jwt.claims',
+  json_build_object(
+    'sub', (select id::text from pg_temp.step9_favorite_subjects
+            where label = 'buyer'),
+    'role', 'authenticated'
+  )::text,
+  true
+);
+set local role authenticated;
+
+insert into pg_temp.step9_favorite_results
+select
+  'favorite owner can read sold listing and retained image metadata',
+  count(*) = 1
+    and bool_and(listing.status = 'sold')
+    and bool_and(private.can_read_favorited_sold_listing(listing.id))
+    and bool_and(exists (
+      select 1
+      from public.listing_images as listing_image
+      where listing_image.listing_id = listing.id
+    )),
+  'visible sold favorites: ' || count(*)::text
+from public.favorites as favorite
+join public.listings as listing on listing.id = favorite.listing_id
+where favorite.user_id = (
+    select id from pg_temp.step9_favorite_subjects where label = 'buyer'
+  )
+  and favorite.listing_id = (
+    select id from pg_temp.step9_favorite_resources
+    where label = 'listing_lifecycle'
+  );
+
+reset role;
 
 -- Pending and suspended students cannot create marketplace interactions.
 select set_config(
@@ -526,6 +609,169 @@ where user_id = (
     where label = 'listing_reserved'
   );
 
+-- Historical access belongs to the favorite owner even if the seller is
+-- disabled. This item has no conversation or reservation to grant access.
+update public.listings
+set status = 'sold'
+where id = (select id from pg_temp.step9_favorite_resources
+            where label = 'listing_available');
+
+update public.profiles
+set account_status = 'suspended'
+where id = (select id from pg_temp.step9_favorite_subjects
+            where label = 'seller');
+
+select set_config(
+  'request.jwt.claim.sub',
+  (select id::text from pg_temp.step9_favorite_subjects where label = 'buyer'),
+  true
+);
+select set_config(
+  'request.jwt.claims',
+  json_build_object(
+    'sub', (select id::text from pg_temp.step9_favorite_subjects
+            where label = 'buyer'),
+    'role', 'authenticated'
+  )::text,
+  true
+);
+set local role authenticated;
+
+insert into pg_temp.step9_favorite_results
+select
+  'saved sold listing remains readable after its seller is suspended',
+  count(*) = 1
+    and bool_and(private.can_read_favorited_sold_listing(listing.id))
+    and bool_and(not exists (
+      select 1 from public.reservations
+      where listing_id = listing.id
+    ))
+    and bool_and(not exists (
+      select 1 from public.conversations
+      where listing_id = listing.id
+    ))
+    and bool_and(exists (
+      select 1 from public.listing_images as image
+      where image.listing_id = listing.id
+        and private.can_read_listing_image_object(
+          image.storage_path, listing.seller_id::text
+        )
+    )),
+  'sold favorite listing, image metadata, and object predicate retained'
+from public.listings as listing
+where listing.id = (select id from pg_temp.step9_favorite_resources
+                    where label = 'listing_available');
+
+reset role;
+
+select set_config(
+  'request.jwt.claim.sub',
+  (select id::text from pg_temp.step9_favorite_subjects
+   where label = 'buyer_two'),
+  true
+);
+select set_config(
+  'request.jwt.claims',
+  json_build_object(
+    'sub', (select id::text from pg_temp.step9_favorite_subjects
+            where label = 'buyer_two'),
+    'role', 'authenticated'
+  )::text,
+  true
+);
+set local role authenticated;
+
+insert into pg_temp.step9_favorite_results
+select
+  'seller suspension does not expose a sold favorite to unrelated students',
+  not private.can_read_favorited_sold_listing(
+    (select id from pg_temp.step9_favorite_resources
+     where label = 'listing_available')
+  )
+    and not private.can_read_listing_image_object(
+      format(
+        '%s/%s/favorite-cover.jpg',
+        (select id from pg_temp.step9_favorite_subjects
+         where label = 'seller'),
+        (select id from pg_temp.step9_favorite_resources
+         where label = 'listing_available')
+      ),
+      (select id::text from pg_temp.step9_favorite_subjects
+       where label = 'seller')
+    )
+    and not exists (
+      select 1 from public.listings
+      where id = (select id from pg_temp.step9_favorite_resources
+                  where label = 'listing_available')
+    )
+    and not exists (
+      select 1 from public.listing_images
+      where listing_id = (select id from pg_temp.step9_favorite_resources
+                          where label = 'listing_available')
+    ),
+  'sold listing and image rows remain invisible without an owned favorite';
+
+reset role;
+
+select set_config(
+  'request.jwt.claim.sub',
+  (select id::text from pg_temp.step9_favorite_subjects where label = 'buyer'),
+  true
+);
+select set_config(
+  'request.jwt.claims',
+  json_build_object(
+    'sub', (select id::text from pg_temp.step9_favorite_subjects
+            where label = 'buyer'),
+    'role', 'authenticated'
+  )::text,
+  true
+);
+set local role authenticated;
+
+select public.set_listing_favorite(
+  (select id from pg_temp.step9_favorite_resources
+   where label = 'listing_available'),
+  false
+);
+
+insert into pg_temp.step9_favorite_results
+select
+  'removing a sold favorite revokes its historical listing access',
+  not private.can_read_favorited_sold_listing(
+    (select id from pg_temp.step9_favorite_resources
+     where label = 'listing_available')
+  )
+    and not private.can_read_listing_image_object(
+      format(
+        '%s/%s/favorite-cover.jpg',
+        (select id from pg_temp.step9_favorite_subjects
+         where label = 'seller'),
+        (select id from pg_temp.step9_favorite_resources
+         where label = 'listing_available')
+      ),
+      (select id::text from pg_temp.step9_favorite_subjects
+       where label = 'seller')
+    )
+    and not exists (
+      select 1 from public.listings
+      where id = (select id from pg_temp.step9_favorite_resources
+                  where label = 'listing_available')
+    )
+    and not exists (
+      select 1 from public.listing_images
+      where listing_id = (select id from pg_temp.step9_favorite_resources
+                          where label = 'listing_available')
+    ),
+  'favorite removed and private listing and image rows revoked';
+
+reset role;
+
+delete from public.reservations
+where buyer_id in (select id from pg_temp.step9_favorite_subjects)
+  or seller_id in (select id from pg_temp.step9_favorite_subjects);
+delete from public.listings
+where seller_id in (select id from pg_temp.step9_favorite_subjects);
 delete from auth.users
 where id in (select id from pg_temp.step9_favorite_subjects);
 delete from public.categories

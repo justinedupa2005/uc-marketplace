@@ -10,12 +10,35 @@ import {
   mapListingCards,
   type ListingCardRow,
 } from "@/features/listings/server/card-mapper";
-import type { MarketplaceProduct } from "@/features/listings/types";
+import type {
+  ListingReservationOverview,
+  MarketplaceProduct,
+} from "@/features/listings/types";
 import { requireVerifiedActiveStudent } from "@/lib/auth/authorization";
 
+const FAVORITE_HISTORY_STATUSES = ["available", "reserved", "sold"] as const;
+
 export type ListingCardsResult =
-  | { products: MarketplaceProduct[]; error: null }
+  | { products: SellerListingProduct[]; error: null }
   | { products: []; error: "unavailable" };
+
+export type SellerListingProduct = MarketplaceProduct & {
+  reservationOverview: ListingReservationOverview;
+};
+
+type ActiveSellerReservationRow = {
+  id: string;
+  listing_id: string;
+  buyer_id: string;
+  status: "pending" | "accepted";
+  created_at: string;
+};
+
+type ReservationBuyerRow = {
+  id: string;
+  full_name: string | null;
+  verification_status: string | null;
+};
 
 export type FavoriteListingsResult =
   | {
@@ -35,25 +58,104 @@ export type FavoriteListingsResult =
 
 export async function getSellerListings(): Promise<ListingCardsResult> {
   const { supabase, user } = await requireVerifiedActiveStudent("/my-listings");
-  const { data, error } = await supabase
-    .from("listings")
-    .select(listingCardSelection)
-    .eq("seller_id", user.id)
-    .neq("status", "draft")
-    .order("created_at", { ascending: false });
+  const [listingResult, reservationResult] = await Promise.all([
+    supabase
+      .from("listings")
+      .select(listingCardSelection)
+      .eq("seller_id", user.id)
+      .neq("status", "draft")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("reservations")
+      .select("id, listing_id, buyer_id, status, created_at")
+      .eq("seller_id", user.id)
+      .in("status", ["pending", "accepted"])
+      .order("created_at", { ascending: false }),
+  ]);
 
-  if (error) {
-    console.warn("Unable to load seller listings", { code: error.code });
+  if (listingResult.error || reservationResult.error) {
+    console.warn("Unable to load seller listings", {
+      listingCode: listingResult.error?.code,
+      reservationCode: reservationResult.error?.code,
+    });
     return { products: [], error: "unavailable" };
   }
 
-  return {
-    products: await mapListingCards(
-      supabase,
-      (data ?? []) as unknown as ListingCardRow[],
-      new Set<string>(),
-      user.id,
+  const reservationRows = (reservationResult.data ?? []) as ActiveSellerReservationRow[];
+  const acceptedBuyerIds = [
+    ...new Set(
+      reservationRows.flatMap((reservation) =>
+        reservation.status === "accepted" ? [reservation.buyer_id] : [],
+      ),
     ),
+  ];
+  const buyerResult = acceptedBuyerIds.length > 0
+    ? await supabase
+        .from("marketplace_profiles")
+        .select("id, full_name, verification_status")
+        .in("id", acceptedBuyerIds)
+    : { data: [], error: null };
+
+  if (buyerResult.error) {
+    console.warn("Unable to load accepted reservation buyers", {
+      code: buyerResult.error.code,
+    });
+    return { products: [], error: "unavailable" };
+  }
+
+  const buyerNames = new Map(
+    ((buyerResult.data ?? []) as ReservationBuyerRow[]).map((buyer) => [
+      buyer.id,
+      buyer.full_name?.trim() || "UC Student",
+    ]),
+  );
+  const verifiedBuyerIds = new Set(
+    ((buyerResult.data ?? []) as ReservationBuyerRow[]).flatMap((buyer) =>
+      buyer.verification_status === "verified" ? [buyer.id] : [],
+    ),
+  );
+  const reservationsByListing = new Map<string, ActiveSellerReservationRow[]>();
+  for (const reservation of reservationRows) {
+    const listingReservations = reservationsByListing.get(reservation.listing_id);
+    if (listingReservations) {
+      listingReservations.push(reservation);
+    } else {
+      reservationsByListing.set(reservation.listing_id, [reservation]);
+    }
+  }
+  const products = await mapListingCards(
+    supabase,
+    (listingResult.data ?? []) as unknown as ListingCardRow[],
+    new Set<string>(),
+    user.id,
+  );
+
+  return {
+    products: products.map((product) => {
+      const listingReservations = reservationsByListing.get(product.id) ?? [];
+      const acceptedReservation = listingReservations.find(
+        (reservation) => reservation.status === "accepted",
+      );
+
+      return {
+        ...product,
+        reservationOverview: {
+          pendingCount: listingReservations.filter(
+            (reservation) => reservation.status === "pending",
+          ).length,
+          acceptedReservation: acceptedReservation
+            ? {
+                id: acceptedReservation.id,
+                buyerName:
+                  buyerNames.get(acceptedReservation.buyer_id) ?? "UC Student",
+                buyerIsVerified: verifiedBuyerIds.has(
+                  acceptedReservation.buyer_id,
+                ),
+              }
+            : null,
+        },
+      };
+    }),
     error: null,
   };
 }
@@ -79,7 +181,7 @@ export async function getFavoriteListings(
     // The inner relation also applies the listings table's RLS policy.
     .select("listing_id, created_at, listings!inner()", { count: "exact" })
     .eq("user_id", user.id)
-    .in("listings.status", ["available", "reserved"])
+    .in("listings.status", FAVORITE_HISTORY_STATUSES)
     .order("created_at", { ascending: false })
     .order("listing_id", { ascending: false })
     .range(offset, offset + FAVORITES_PAGE_SIZE - 1);
@@ -112,7 +214,7 @@ export async function getFavoriteListings(
     .from("listings")
     .select(listingCardSelection)
     .in("id", listingIds)
-    .in("status", ["available", "reserved"])
+    .in("status", FAVORITE_HISTORY_STATUSES)
     .order("is_cover", {
       referencedTable: "listing_images",
       ascending: false,

@@ -48,6 +48,13 @@ type OwnedListingEditRow = {
   listing_images: ListingImageRow[] | null;
 };
 
+type ActiveReservationRow = {
+  id: string;
+  buyer_id: string;
+  status: "pending" | "accepted";
+  created_at: string;
+};
+
 export type ListingDetailsResult =
   | { listing: ListingDetails; error: null }
   | { listing: null; error: "not_found" | "unavailable" };
@@ -84,6 +91,12 @@ export async function getListingDetails(
 
   const listing = data as unknown as ListingDetailsRow;
   const isOwner = listing.seller_id === user.id;
+  const reservationQuery = supabase
+    .from("reservations")
+    .select("id, buyer_id, status, created_at")
+    .eq("listing_id", listingId)
+    .in("status", ["pending", "accepted"])
+    .order("created_at", { ascending: false });
   const [sellerResult, favoriteResult, reservationResult, conversationResult] =
     await Promise.all([
       supabase
@@ -99,15 +112,7 @@ export async function getListingDetails(
             .eq("user_id", user.id)
             .eq("listing_id", listingId)
             .maybeSingle(),
-      isOwner
-        ? Promise.resolve({ data: null, error: null })
-        : supabase
-            .from("reservations")
-            .select("id, status")
-            .eq("listing_id", listingId)
-            .eq("buyer_id", user.id)
-            .in("status", ["pending", "accepted"])
-            .maybeSingle(),
+      isOwner ? reservationQuery : reservationQuery.eq("buyer_id", user.id),
       isOwner
         ? Promise.resolve({ data: null, error: null })
         : supabase
@@ -120,7 +125,7 @@ export async function getListingDetails(
 
   if (
     sellerResult.error ||
-    !sellerResult.data ||
+    (!sellerResult.data && listing.status !== "sold") ||
     favoriteResult.error ||
     reservationResult.error ||
     conversationResult.error
@@ -129,7 +134,36 @@ export async function getListingDetails(
     return { listing: null, error: "unavailable" };
   }
 
-  const seller = sellerResult.data as SellerProfileRow;
+  // A saved sold listing is durable history even if its seller is later
+  // suspended. Marketplace profile views intentionally hide ineligible
+  // accounts, so render a privacy-safe historical identity in that case.
+  const seller: SellerProfileRow = sellerResult.data
+    ? (sellerResult.data as SellerProfileRow)
+    : {
+        id: listing.seller_id,
+        full_name: "Former UC Student",
+        course: null,
+        year_level: null,
+        avatar_path: null,
+        verification_status: "unavailable",
+      };
+  const reservationRows = (reservationResult.data ?? []) as ActiveReservationRow[];
+  const acceptedReservation = isOwner
+    ? reservationRows.find((reservation) => reservation.status === "accepted") ?? null
+    : null;
+  const acceptedBuyerResult = acceptedReservation
+    ? await supabase
+        .from("marketplace_profiles")
+        .select("id, full_name, verification_status")
+        .eq("id", acceptedReservation.buyer_id)
+        .maybeSingle()
+    : { data: null, error: null };
+  if (acceptedBuyerResult.error) {
+    console.warn("Unable to load accepted reservation buyer", {
+      code: acceptedBuyerResult.error.code,
+    });
+    return { listing: null, error: "unavailable" };
+  }
   const orderedImages = sortListingImages(listing.listing_images);
   const { urls, hasError } = await signListingImagePaths(
     supabase,
@@ -154,10 +188,26 @@ export async function getListingDetails(
       updatedAt: listing.updated_at,
       isOwner,
       isFavorited: Boolean(favoriteResult.data),
-      activeReservation: reservationResult.data
+      activeReservation: !isOwner && reservationRows[0]
         ? {
-            id: String(reservationResult.data.id),
-            status: String(reservationResult.data.status),
+            id: reservationRows[0].id,
+            status: reservationRows[0].status,
+          }
+        : null,
+      reservationOverview: isOwner
+        ? {
+            pendingCount: reservationRows.filter(
+              (reservation) => reservation.status === "pending",
+            ).length,
+            acceptedReservation: acceptedReservation
+              ? {
+                  id: acceptedReservation.id,
+                  buyerName:
+                    acceptedBuyerResult.data?.full_name?.trim() || "UC Student",
+                  buyerIsVerified:
+                    acceptedBuyerResult.data?.verification_status === "verified",
+                }
+              : null,
           }
         : null,
       existingConversationId:

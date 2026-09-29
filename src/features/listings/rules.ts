@@ -54,7 +54,10 @@ export function canOwnerEditListing(status: ListingStatus) {
 }
 
 export function canOwnerMarkListingSold(status: ListingStatus) {
-  return status === "available" || status === "reserved";
+  void status;
+  // Sales are completed from an accepted reservation so the listing,
+  // reservation, and meetup can transition in one database transaction.
+  return false;
 }
 
 export function canOwnerRemoveListing(status: ListingStatus) {

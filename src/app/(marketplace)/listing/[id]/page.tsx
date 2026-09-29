@@ -163,11 +163,16 @@ export default async function ListingDetailsPage({
               <ListingOwnerActions
                 listingId={listing.id}
                 status={listing.statusValue}
+                reservationOverview={listing.reservationOverview}
               />
             ) : (
               <ListingBuyerActions
                 listingId={listing.id}
                 title={listing.title}
+                price={listing.price}
+                sellerName={listing.seller.fullName}
+                sellerIsVerified={listing.seller.isVerified}
+                imageUrl={listing.images[0]?.src ?? null}
                 status={listing.statusValue}
                 initialIsFavorited={listing.isFavorited}
                 activeReservation={listing.activeReservation}

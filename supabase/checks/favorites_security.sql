@@ -1,4 +1,4 @@
--- Run after 20260926030000_complete_favorites.sql.
+-- Run after 20260928000000_complete_reservations_and_meetups.sql.
 -- Every row, including the summary, must report passed = true.
 
 with favorite_rpc_oids(function_oid) as (
@@ -242,7 +242,45 @@ checks(check_name, passed) as (
       )
     ),
     (
-      'sold and removed lifecycle operations clean favorites',
+      'sale completion preserves favorites while removal cleans them',
+      pg_get_functiondef(to_regprocedure(
+        'public.complete_sale(uuid)'
+      )) not ilike '%delete from public.favorites%'
+      and exists (
+        select 1
+        from pg_policies
+        where schemaname = 'public'
+          and tablename = 'listings'
+          and policyname = 'Students can read their favorited sold listings'
+          and cmd = 'SELECT'
+      )
+      and exists (
+        select 1
+        from pg_policies
+        where schemaname = 'public'
+          and tablename = 'listing_images'
+          and policyname = 'Students can read favorited sold listing images'
+          and cmd = 'SELECT'
+      )
+      and exists (
+        select 1
+        from pg_policies
+        where schemaname = 'public'
+          and tablename = 'listings'
+          and policyname = 'Marketplace listing reads require authorized account'
+          and permissive = 'RESTRICTIVE'
+          and qual ilike '%can_read_favorited_sold_listing%'
+      )
+      and exists (
+        select 1
+        from pg_policies
+        where schemaname = 'public'
+          and tablename = 'listing_images'
+          and policyname = 'Listing image reads require authorized account'
+          and permissive = 'RESTRICTIVE'
+          and qual ilike '%can_read_favorited_sold_listing%'
+      )
+      and
       pg_get_functiondef(to_regprocedure(
         'public.set_owned_listing_status(uuid,text)'
       )) ilike '%delete from public.favorites where listing_id = p_listing_id%'
