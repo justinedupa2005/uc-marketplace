@@ -11,6 +11,8 @@ import {
 } from "@/lib/auth/authorization";
 import { COURSE_OPTIONS } from "@/lib/auth/options";
 
+import { NotificationBell } from "../notification-bell";
+
 export const metadata: Metadata = {
   title: "Profile | UC Marketplace",
   description: "View your UC Marketplace profile and account options.",
@@ -20,7 +22,7 @@ const menuItems = [
   { label: "My Purchases", icon: "purchases.svg", href: "#purchases" },
   { label: "Reservations", icon: "clock.svg", href: "/reservations" },
   { label: "Account Settings", icon: "account.svg", href: "#settings" },
-  { label: "Notification Preferences", icon: "notifications.svg", href: "#notifications" },
+  { label: "Notifications", icon: "notifications.svg", href: "/notifications" },
   { label: "Help Center", icon: "help.svg", href: "#help" },
 ];
 
@@ -56,6 +58,7 @@ export default async function ProfilePage() {
       <div className="min-h-screen bg-[#f9f9ff] text-[#121c2a]">
         {!hasMarketplaceAccess && (
           <AppHeader
+            notificationBell={<NotificationBell />}
             variant="back"
             title="Profile"
             backHref={getAuthorizedDestination(authorizationProfile)}
@@ -134,6 +137,7 @@ export default async function ProfilePage() {
     <div className="min-h-screen bg-[#f9f9ff] text-[#121c2a]">
       {!hasMarketplaceAccess && (
         <AppHeader
+          notificationBell={<NotificationBell />}
           variant="back"
           title="Profile"
           backHref={getAuthorizedDestination(authorizationProfile)}

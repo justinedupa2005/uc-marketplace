@@ -9,8 +9,11 @@ import {
   getAuthorizedDestination,
   isVerifiedActiveStudent,
   requireActiveProfile,
+  requireAuthenticatedProfile,
 } from "@/lib/auth/authorization";
 import { getSafeNextPath } from "@/lib/auth/redirects";
+
+import { NotificationBell } from "./notification-bell";
 
 type MarketplaceLayoutProps = Readonly<{
   children: ReactNode;
@@ -22,7 +25,10 @@ export default async function MarketplaceLayout({
   const requestedPath = getSafeNextPath(
     (await headers()).get("x-uc-marketplace-path"),
   );
-  const access = await requireActiveProfile(requestedPath);
+  const isNotificationInbox = requestedPath.split("?", 1)[0] === "/notifications";
+  const access = isNotificationInbox
+    ? await requireAuthenticatedProfile(requestedPath)
+    : await requireActiveProfile(requestedPath);
   const authorizedDestination = getAuthorizedDestination(
     access.profile,
     requestedPath,
@@ -37,7 +43,9 @@ export default async function MarketplaceLayout({
   return (
     <>
       <AccessRefresh />
-      {showMarketplaceNavigation && <Navbar />}
+      {showMarketplaceNavigation && (
+        <Navbar notificationBell={<NotificationBell />} />
+      )}
       {children}
       {showMarketplaceNavigation && <MobileNavigation />}
     </>

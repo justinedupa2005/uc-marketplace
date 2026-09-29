@@ -77,6 +77,12 @@ export default async function AccountStatusPage() {
         <h1 className="mt-5 text-3xl font-bold tracking-[-0.02em]">{title}</h1>
         <p className="mt-3 text-sm leading-6 text-[#444653]">{description}</p>
 
+        {profile && (
+          <Link href="/notifications" className="mt-6 inline-flex min-h-11 items-center justify-center rounded-md border border-[#0038a8] px-5 text-sm font-semibold text-[#0038a8] hover:bg-[#e6eeff]">
+            View Notifications
+          </Link>
+        )}
+
         <form action={logout} className="mt-7">
           <button
             type="submit"

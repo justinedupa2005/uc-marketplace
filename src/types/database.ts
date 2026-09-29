@@ -192,16 +192,57 @@ type PendingReservationFunctions = {
   };
 };
 
+type NotificationRow = {
+  id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  message: string;
+  listing_id: string | null;
+  conversation_id: string | null;
+  reservation_id: string | null;
+  meetup_id: string | null;
+  event_key: string;
+  is_read: boolean;
+  created_at: string;
+  read_at: string | null;
+};
+
+type PendingNotificationTables = {
+  notifications: {
+    Row: NotificationRow;
+    Insert: Pick<NotificationRow, "user_id" | "type" | "title" | "message" | "event_key"> &
+      Partial<Omit<NotificationRow, "user_id" | "type" | "title" | "message" | "event_key">>;
+    Update: Partial<NotificationRow>;
+    Relationships: [];
+  };
+};
+
+type PendingNotificationFunctions = {
+  get_my_notification_state: {
+    Args: Record<PropertyKey, never>;
+    Returns: Array<{ unread_count: number; snapshot_at: string }>;
+  };
+  mark_notification_read: {
+    Args: { p_notification_id: string };
+    Returns: boolean;
+  };
+  mark_all_notifications_read: {
+    Args: { p_before?: string | null };
+    Returns: number;
+  };
+};
+
 export type Database = Omit<GeneratedDatabase, "public"> & {
   public: Omit<GeneratedDatabase["public"], "Functions" | "Tables"> & {
     Tables: Omit<
       GeneratedDatabase["public"]["Tables"],
-      keyof PendingReservationTables
+      keyof PendingReservationTables | keyof PendingNotificationTables
     > &
-      PendingReservationTables;
+      PendingReservationTables & PendingNotificationTables;
     Functions: GeneratedDatabase["public"]["Functions"] &
       PendingMessagingFunctions &
-      PendingReservationFunctions;
+      PendingReservationFunctions & PendingNotificationFunctions;
   };
 };
 

@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
 
 import {
   NavigationLink as Link,
@@ -20,7 +21,7 @@ const desktopLinks = [
   { href: "/profile", label: "Profile" },
 ];
 
-export function Navbar() {
+export function Navbar({ notificationBell }: { notificationBell: ReactNode }) {
   const pathname = usePathname();
   const { confirmNavigation } = useNavigationBlocker();
 
@@ -30,7 +31,7 @@ export function Navbar() {
         <Button
           variant="icon"
           aria-label="Open navigation menu"
-          className="size-[34px] rounded-full p-2 md:hidden"
+          className="size-[34px] shrink-0 rounded-full p-2 md:hidden"
         >
           <Image
             src="/assets/marketplace/menu.svg"
@@ -43,12 +44,12 @@ export function Navbar() {
 
         <Link
           href="/marketplace"
-          className="text-2xl font-bold leading-9 text-[#002576]"
+          className="shrink-0 text-2xl font-bold leading-9 text-[#002576]"
         >
           UC-Market
         </Link>
 
-        <nav aria-label="Primary navigation" className="hidden items-center gap-1 md:flex">
+        <nav aria-label="Primary navigation" className="mx-3 hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto md:flex lg:flex-none">
           {desktopLinks.map((link) => {
             const isActive =
               pathname === link.href || pathname.startsWith(`${link.href}/`);
@@ -58,7 +59,7 @@ export function Navbar() {
                 key={link.href}
                 href={link.href}
                 aria-current={isActive ? "page" : undefined}
-                className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors hover:bg-[#e9effb] ${
+                className={`shrink-0 whitespace-nowrap rounded-md px-3 py-2 text-sm font-semibold transition-colors hover:bg-[#e9effb] ${
                   isActive ? "text-[#002576]" : "text-[#444653]"
                 }`}
               >
@@ -68,7 +69,8 @@ export function Navbar() {
           })}
         </nav>
 
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
+          {notificationBell}
           <Button
             variant="icon"
             aria-label="Search marketplace"

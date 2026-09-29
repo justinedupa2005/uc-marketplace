@@ -10,6 +10,7 @@ import {
 import { StudentInformation } from "./student-information";
 import { studentInformationSchema } from "./validation";
 import { VerificationForm } from "./verification-form";
+import { NotificationBell } from "../notification-bell";
 
 export const metadata: Metadata = {
   title: "Student Verification | UC Marketplace",
@@ -105,6 +106,7 @@ export default async function VerificationPage() {
     <div className="min-h-screen bg-[#f9f9ff] text-[#121c2a]">
       {!hasMarketplaceAccess && (
         <AppHeader
+          notificationBell={<NotificationBell />}
           variant="back"
           title="Student Verification"
           backHref="/profile"

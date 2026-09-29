@@ -68,6 +68,10 @@ Apply migrations in filename order:
    - Completes reservation history, private meetup scheduling, atomic
      acceptance/cancellation/sale RPCs, participant messaging, and retained
      sold favorites. Run the Step 11 preflight before applying it.
+16. `20260929000000_complete_notifications.sql`
+   - Adds recipient-owned notifications, read-state RPCs, and atomic event
+     triggers for messaging, reservations, meetups, verification, and existing
+     administrator moderation. Does not backfill historical notifications.
 
 ## Applying these migrations to another project
 
@@ -444,6 +448,66 @@ Regenerate database types after applying the migration and remove the applied
 reservation additions from the pending schema overlay in
 `src/types/database.ts`. This migration is required for the Step 11 UI.
 
+## Apply Step 12 notifications
+
+Apply `20260929000000_complete_notifications.sql` only after the Step 10
+messaging and Step 11 reservation migrations. It creates a new empty table
+and adds event triggers; it does not rewrite previous migrations or notify
+students about historical events. Preview pending migrations with
+`npx.cmd supabase db push --dry-run --linked` before applying them once through
+the normal migration workflow.
+
+Run `checks/notifications_security.sql` and
+`checks/notifications_rls_smoke.sql` afterward. Also rerun the Step 10 messaging,
+Step 11 reservation, favorites, listing-management, and marketplace
+authorization smoke tests to check the existing workflows with the new
+triggers. All named checks and smoke summaries must pass. These smoke tests
+use disposable fixtures and explicitly exercise the authenticated/anonymous
+roles rather than relying on privileged reads.
+
+Notifications are created in the business event's transaction. Their
+recipient and related IDs come from trusted database rows. Event keys
+deduplicate repeat deliveries, and no-op updates do not create notifications.
+Accepted-reservation cancellation alerts the other participant (or both
+participants when an administrator closes the reservation). Pending-request
+withdrawal and terminal meetup status changes do not generate redundant
+notifications. Meetup alerts contain no location, notes, or schedule details;
+message alerts contain no chat body. Verification reasons, identity documents,
+student IDs, emails, and private admin notes stay out of notification text.
+
+Authenticated users can SELECT only their own notifications. Direct INSERT,
+UPDATE, and DELETE are revoked; `mark_notification_read(uuid)` and
+`mark_all_notifications_read(timestamptz)` can change only the caller's read
+state. Individual acknowledgement preserves its original `read_at` on retry.
+`get_my_notification_state()` returns the caller's unread count and a
+database-clock cutoff. Mark-all uses that exact cutoff, including timestamp
+precision, so notifications created later remain unread. As with any timestamp
+cutoff, an older transaction committing after the snapshot may include a row
+that was not displayed; it is not a strict "visible rows only" guarantee.
+
+The `/notifications` inbox is deliberately accessible to unverified, pending,
+rejected, suspended, and disabled accounts so they can read verification and
+account-status notices. Authentication and password-recovery checks still
+apply. This exception does not grant access to marketplace transactions or
+linked resources, which retain their existing authorization rules.
+
+The inbox loads 20 rows per page, newest first, and never marks them read just
+by loading. Bell counts come from the database; successful read actions
+refresh the shared layouts. The existing focus/visibility and one-minute
+access refresh also picks up incoming events. Notifications are not added to
+the Realtime publication in this migration; Realtime remains optional and is
+not required for persisted notifications.
+
+Before hosted acceptance, use separate seller, buyer, and administrator
+sessions to test message receipt, request/accept/reject/cancel, meetup
+schedule/edit, completed sale, verification review, and account moderation.
+Check recipient-only delivery, safe links, matching unread badges, first-read
+timestamps, mark-all with a newly arriving event, and persistence after refresh
+and logout/login. Confirm that an unverified or suspended student can read
+their inbox but cannot use linked marketplace actions. Regenerate database
+types after applying the migration and remove the applied notification
+additions from the pending schema overlay in `src/types/database.ts`.
+
 ## Bootstrap the first administrator
 
 There is intentionally no public admin registration or role-change RPC. After
@@ -497,10 +561,10 @@ ID or changing browser metadata does not grant administrator access.
 
 The Supabase CLI is installed as a development dependency and this repository
 has a local `supabase/config.toml`. The UC Marketplace project is linked, and
-migration versions 1-11 are recorded as applied, including the Step 8 browsing
-optimization. Migrations 12-14 must appear there after Steps 9-10 are applied
-with `supabase db push`. Running SQL manually does not necessarily add entries
-to `supabase_migrations.schema_migrations`.
+migration versions are recorded when applied with `supabase db push`.
+Compare the exact versions rather than the numbered list above, which also
+includes an optional staged Realtime migration. Running SQL manually does not
+necessarily add entries to `supabase_migrations.schema_migrations`.
 
 On a new machine or for a different project, from the repository root run:
 

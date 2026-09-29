@@ -1,4 +1,5 @@
 import Image from "next/image";
+import type { ReactNode } from "react";
 
 import { NavigationLink as Link } from "@/components/navigation-blocker";
 import { logout } from "@/features/auth/actions";
@@ -14,6 +15,7 @@ type AppHeaderProps = (
       backHref?: string;
     }
 ) & {
+  notificationBell: ReactNode;
   showLogout?: boolean;
   showMarketplaceNavigation?: boolean;
 };
@@ -37,7 +39,7 @@ export function AppHeader(props: AppHeaderProps) {
             <>
               <Link
                 href={props.backHref ?? "/marketplace"}
-                aria-label="Go back to marketplace"
+                aria-label="Go back"
                 className="flex size-9 items-center justify-center rounded-full hover:bg-[#e6eeff]"
               >
                 <Image src="/assets/app/back.svg" alt="" width={16} height={16} />
@@ -77,31 +79,34 @@ export function AppHeader(props: AppHeaderProps) {
           </nav>
         )}
 
-        {props.showLogout ? (
-          <form action={logout}>
+        <div className="flex shrink-0 items-center gap-2">
+          {props.notificationBell}
+          {props.showLogout ? (
+            <form action={logout}>
+              <button
+                type="submit"
+                aria-label="Log out"
+                className="flex min-h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-[#ba1a1a] hover:bg-[#ba1a1a]/5"
+              >
+                <Image src="/assets/app/logout.svg" alt="" width={18} height={18} />
+                <span className="hidden sm:inline">Log Out</span>
+              </button>
+            </form>
+          ) : isBack ? (
             <button
-              type="submit"
-              aria-label="Log out"
-              className="flex min-h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-[#ba1a1a] hover:bg-[#ba1a1a]/5"
+              type="button"
+              aria-label="Open account settings"
+              className="flex size-9 shrink-0 items-center justify-center rounded-full hover:bg-[#e6eeff]"
             >
-              <Image src="/assets/app/logout.svg" alt="" width={18} height={18} />
-              <span className="hidden sm:inline">Log Out</span>
+              <Image
+                src="/assets/app/settings.svg"
+                alt=""
+                width={20}
+                height={20}
+              />
             </button>
-          </form>
-        ) : (
-          <button
-            type="button"
-            aria-label={isBack ? "Open account settings" : "View notifications"}
-            className="flex size-9 shrink-0 items-center justify-center rounded-full hover:bg-[#e6eeff]"
-          >
-            <Image
-              src={isBack ? "/assets/app/settings.svg" : "/assets/app/bell.svg"}
-              alt=""
-              width={isBack ? 20 : 16}
-              height={20}
-            />
-          </button>
-        )}
+          ) : null}
+        </div>
       </div>
     </header>
   );

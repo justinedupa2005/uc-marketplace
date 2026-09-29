@@ -103,14 +103,21 @@ export function getAuthorizedDestination(
   profile: AuthorizationProfile | null,
   requestedPath?: string | null,
 ) {
-  if (!profile || profile.account_status !== "active") {
-    return "/account-status";
-  }
-
   const candidate = requestedPath
     ? getSafeNextPath(requestedPath, "")
     : "";
   const pathname = candidate.split("?", 1)[0];
+
+  // Account and verification updates must remain accessible even when a
+  // student cannot enter the marketplace. This exception covers only the
+  // recipient's notification inbox, not the linked marketplace resources.
+  if (profile && matchesRouteRoot(pathname, "/notifications")) {
+    return candidate;
+  }
+
+  if (!profile || profile.account_status !== "active") {
+    return "/account-status";
+  }
 
   if (profile.role === "admin") {
     return candidate &&
@@ -200,7 +207,7 @@ function toAuthorizedContext(
   };
 }
 
-export async function requireActiveProfile(nextPath = "/profile") {
+export async function requireAuthenticatedProfile(nextPath = "/profile") {
   let access: Awaited<ReturnType<typeof getCurrentAccessContext>>;
 
   try {
@@ -219,11 +226,19 @@ export async function requireActiveProfile(nextPath = "/profile") {
     redirect("/reset-password");
   }
 
-  if (!access.profile || access.profile.account_status !== "active") {
+  if (!access.profile) {
     redirect("/account-status");
   }
 
   return toAuthorizedContext(access);
+}
+
+export async function requireActiveProfile(nextPath = "/profile") {
+  const access = await requireAuthenticatedProfile(nextPath);
+  if (access.profile.account_status !== "active") {
+    redirect("/account-status");
+  }
+  return access;
 }
 
 export async function requireActiveStudent(nextPath = "/verification") {
