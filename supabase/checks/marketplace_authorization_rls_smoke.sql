@@ -808,8 +808,9 @@ from removed;
 select pg_temp.expect_denied(
   'ordinary student cannot call admin removal RPC',
   format(
-    'select public.admin_remove_listing(%L::uuid)',
-    (select id from pg_temp.authz_resources where label = 'admin_target')
+    'select public.admin_moderate_listing(%L::uuid, %L)',
+    (select id from pg_temp.authz_resources where label = 'admin_target'),
+    'Test authorization boundary for removal.'
   )
 );
 
@@ -1009,8 +1010,9 @@ select pg_temp.expect_denied(
   )
 );
 
-select public.admin_remove_listing(
-  (select id from pg_temp.authz_resources where label = 'admin_target')
+select public.admin_moderate_listing(
+  (select id from pg_temp.authz_resources where label = 'admin_target'),
+  'Test administrator removal of listing.'
 );
 
 insert into pg_temp.authz_results
@@ -1093,8 +1095,9 @@ where id in (select id from pg_temp.authz_subjects);
 select pg_temp.expect_denied(
   'suspended admin cannot call moderation RPC',
   format(
-    'select public.admin_remove_listing(%L::uuid)',
-    (select id from pg_temp.authz_resources where label = 'b_available')
+    'select public.admin_moderate_listing(%L::uuid, %L)',
+    (select id from pg_temp.authz_resources where label = 'b_available'),
+    'Test suspended admin cannot remove listing.'
   )
 );
 
@@ -1102,6 +1105,8 @@ reset role;
 
 -- Remove every persistent fixture before committing. Storage rows are not
 -- foreign-keyed to Auth users, so remove them explicitly first.
+delete from private.moderation_actions
+where actor_id in (select id from pg_temp.authz_subjects);
 delete from storage.objects
 where bucket_id = 'listing-images'
   and owner_id in (select id::text from pg_temp.authz_subjects);

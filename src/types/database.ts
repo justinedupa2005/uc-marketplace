@@ -233,16 +233,97 @@ type PendingNotificationFunctions = {
   };
 };
 
+type ReviewedReportFields = {
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  admin_note: string | null;
+};
+
+type PendingModerationTables = {
+  listing_reports: Omit<
+    GeneratedDatabase["public"]["Tables"]["listing_reports"],
+    "Row" | "Insert" | "Update"
+  > & {
+    Row: GeneratedDatabase["public"]["Tables"]["listing_reports"]["Row"] &
+      ReviewedReportFields;
+    Insert: GeneratedDatabase["public"]["Tables"]["listing_reports"]["Insert"] &
+      Partial<ReviewedReportFields>;
+    Update: GeneratedDatabase["public"]["Tables"]["listing_reports"]["Update"] &
+      Partial<ReviewedReportFields>;
+  };
+  student_reports: {
+    Row: {
+      id: string;
+      reporter_id: string;
+      subject_id: string;
+      reason: string;
+      details: string | null;
+      status: string;
+      created_at: string;
+      updated_at: string;
+    } & ReviewedReportFields;
+    Insert: {
+      id?: string;
+      reporter_id: string;
+      subject_id: string;
+      reason: string;
+      details?: string | null;
+      status?: string;
+      created_at?: string;
+      updated_at?: string;
+    } & Partial<ReviewedReportFields>;
+    Update: Partial<{
+      id: string;
+      reporter_id: string;
+      subject_id: string;
+      reason: string;
+      details: string | null;
+      status: string;
+      created_at: string;
+      updated_at: string;
+    } & ReviewedReportFields>;
+    Relationships: [];
+  };
+};
+
+type PendingModerationFunctions = {
+  report_student: {
+    Args: { p_subject_id: string; p_reason: string; p_details?: string | null };
+    Returns: string;
+  };
+  admin_review_report: {
+    Args: {
+      p_kind: string;
+      p_report_id: string;
+      p_decision: string;
+      p_admin_note?: string | null;
+    };
+    Returns: undefined;
+  };
+  get_admin_report_note: {
+    Args: { p_kind: string; p_report_id: string };
+    Returns: string | null;
+  };
+  admin_moderate_user: {
+    Args: { p_user_id: string; p_account_status: string; p_reason?: string | null };
+    Returns: undefined;
+  };
+  admin_moderate_listing: {
+    Args: { p_listing_id: string; p_reason?: string | null };
+    Returns: undefined;
+  };
+};
+
 export type Database = Omit<GeneratedDatabase, "public"> & {
   public: Omit<GeneratedDatabase["public"], "Functions" | "Tables"> & {
     Tables: Omit<
       GeneratedDatabase["public"]["Tables"],
-      keyof PendingReservationTables | keyof PendingNotificationTables
+      keyof PendingReservationTables | keyof PendingNotificationTables | keyof PendingModerationTables
     > &
-      PendingReservationTables & PendingNotificationTables;
+      PendingReservationTables & PendingNotificationTables & PendingModerationTables;
     Functions: GeneratedDatabase["public"]["Functions"] &
       PendingMessagingFunctions &
-      PendingReservationFunctions & PendingNotificationFunctions;
+      PendingReservationFunctions & PendingNotificationFunctions & PendingModerationFunctions;
   };
 };
 

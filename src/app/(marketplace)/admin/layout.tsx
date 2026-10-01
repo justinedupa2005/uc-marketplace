@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { logout } from "@/features/auth/actions";
 
+import { AdminNavigation } from "@/features/moderation/components/admin-navigation";
 import { requireActiveAdmin } from "./verifications/admin-access";
 
 export default async function AdminLayout({
@@ -14,13 +15,10 @@ export default async function AdminLayout({
     <div className="min-h-screen bg-[#f9f9ff] text-[#121c2a]">
       <header className="border-b border-[#c4c5d5] bg-white">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-4 px-5 py-4 sm:px-8">
-          <Link href="/admin/verifications" className="text-lg font-bold text-[#002576]">
+          <Link href="/admin" className="text-lg font-bold text-[#002576]">
             UC Marketplace <span className="font-medium text-[#444653]">Admin</span>
           </Link>
-          <nav aria-label="Admin navigation" className="flex flex-wrap items-center gap-4 text-sm font-semibold">
-            <Link href="/admin/verifications" className="text-[#002576] hover:underline">
-              Verifications
-            </Link>
+          <div className="flex items-center gap-4 text-sm font-semibold">
             <Link href="/profile" className="text-[#444653] hover:text-[#002576]">
               Profile
             </Link>
@@ -29,8 +27,9 @@ export default async function AdminLayout({
                 Log Out
               </button>
             </form>
-          </nav>
+          </div>
         </div>
+        <AdminNavigation />
       </header>
       {children}
     </div>

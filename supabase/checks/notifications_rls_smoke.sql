@@ -357,9 +357,9 @@ select pg_temp.step12_expect_rejected('repeated verification review is rejected'
 select pg_temp.step12_assert('repeated review creates no duplicate approval notification',
   (select count(*) = 1 from public.notifications where type = 'verification_approved'));
 select pg_temp.step12_as('admin',
-  'select public.admin_remove_listing((select id from pg_temp.step12_resources where label = ''listing_moderate''))');
-select pg_temp.step12_as('admin',
-  'select public.admin_remove_listing((select id from pg_temp.step12_resources where label = ''listing_moderate''))');
+  'select public.admin_moderate_listing((select id from pg_temp.step12_resources where label = ''listing_moderate''), ''Listing content violates marketplace policy.'')');
+select pg_temp.step12_expect_rejected('repeated admin listing removal is rejected', 'admin',
+  'select public.admin_moderate_listing((select id from pg_temp.step12_resources where label = ''listing_moderate''), ''Listing content violates marketplace policy.'')', 'P0001');
 select pg_temp.step12_assert('admin listing removal notifies seller once and cancels transaction for both participants',
   (select count(*) = 1 and bool_and(user_id = (select id from pg_temp.step12_subjects where label = 'seller'))
    from public.notifications where type = 'listing_removed')
@@ -371,30 +371,30 @@ select pg_temp.step12_assert('seller self-removal does not claim to be admin mod
   not exists (select 1 from public.notifications where type = 'listing_removed'
               and listing_id = (select id from pg_temp.step12_resources where label = 'listing_own_remove')));
 select pg_temp.step12_as('admin',
-  'select public.admin_set_account_status((select id from pg_temp.step12_subjects where label = ''outsider''), ''suspended'')');
-select pg_temp.step12_as('admin',
-  'select public.admin_set_account_status((select id from pg_temp.step12_subjects where label = ''outsider''), ''suspended'')');
-select pg_temp.step12_assert('suspension no-op creates only one recipient notification',
+  'select public.admin_moderate_user((select id from pg_temp.step12_subjects where label = ''outsider''), ''suspended'', ''Repeated unsafe marketplace conduct.'')');
+select pg_temp.step12_expect_rejected('repeated suspension is rejected', 'admin',
+  'select public.admin_moderate_user((select id from pg_temp.step12_subjects where label = ''outsider''), ''suspended'', ''Repeated unsafe marketplace conduct.'')', 'P0001');
+select pg_temp.step12_assert('repeated suspension creates only one recipient notification',
   (select count(*) = 1 and bool_and(user_id = (select id from pg_temp.step12_subjects where label = 'outsider'))
    from public.notifications where type = 'account_suspended'));
 select pg_temp.step12_as('outsider',
   'select pg_temp.step12_assert(''suspended user can read their own suspension notice'', (select count(*) = 1 from public.notifications where type = ''account_suspended''))');
 select pg_temp.step12_as('admin',
-  'select public.admin_set_account_status((select id from pg_temp.step12_subjects where label = ''outsider''), ''active'')');
-select pg_temp.step12_as('admin',
-  'select public.admin_set_account_status((select id from pg_temp.step12_subjects where label = ''outsider''), ''active'')');
-select pg_temp.step12_assert('reactivation no-op creates only one recipient notification',
+  'select public.admin_moderate_user((select id from pg_temp.step12_subjects where label = ''outsider''), ''active'', ''Student appeal was carefully reviewed.'')');
+select pg_temp.step12_expect_rejected('repeated reactivation is rejected', 'admin',
+  'select public.admin_moderate_user((select id from pg_temp.step12_subjects where label = ''outsider''), ''active'', ''Student appeal was carefully reviewed.'')', 'P0001');
+select pg_temp.step12_assert('repeated reactivation creates only one recipient notification',
   (select count(*) = 1 and bool_and(user_id = (select id from pg_temp.step12_subjects where label = 'outsider'))
    from public.notifications where type = 'account_reactivated'));
 select pg_temp.step12_as('admin',
-  'select public.admin_set_account_status((select id from pg_temp.step12_subjects where label = ''outsider''), ''suspended'')');
+  'select public.admin_moderate_user((select id from pg_temp.step12_subjects where label = ''outsider''), ''suspended'', ''Further conduct review required a suspension.'')');
 select pg_temp.step12_as('admin',
-  'select public.admin_set_account_status((select id from pg_temp.step12_subjects where label = ''outsider''), ''active'')');
+  'select public.admin_moderate_user((select id from pg_temp.step12_subjects where label = ''outsider''), ''active'', ''Further appeal restored this account.'')');
 select pg_temp.step12_assert('later legitimate suspend and reactivate transitions are not suppressed as duplicates',
   (select count(*) = 2 from public.notifications where type = 'account_suspended')
   and (select count(*) = 2 from public.notifications where type = 'account_reactivated'));
 select pg_temp.step12_as('admin',
-  'select public.admin_set_account_status((select id from pg_temp.step12_subjects where label = ''outsider''), ''disabled'')');
+  'select public.admin_moderate_user((select id from pg_temp.step12_subjects where label = ''outsider''), ''disabled'', ''Severe policy violation requires account closure.'')');
 select pg_temp.step12_as('outsider',
   'select pg_temp.step12_assert(''disabled recipient can read an accurate account-disabled notification'', (select count(*) = 1 from public.notifications where type = ''account_suspended'' and title = ''Account disabled''))');
 select pg_temp.step12_assert('event workflow never sends an admin their own action notification',
@@ -467,6 +467,7 @@ select pg_temp.step12_assert('notification messages never include private identi
 
 -- Related record deletion retains the recipient notification while clearing
 -- unusable foreign references. Cleanup cannot rely on auth deletion cascades.
+delete from private.moderation_actions where actor_id in (select id from pg_temp.step12_subjects);
 delete from public.reservations where buyer_id in (select id from pg_temp.step12_subjects)
   or seller_id in (select id from pg_temp.step12_subjects);
 delete from public.listings where seller_id in (select id from pg_temp.step12_subjects);

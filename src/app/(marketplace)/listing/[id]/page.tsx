@@ -168,6 +168,7 @@ export default async function ListingDetailsPage({
             ) : (
               <ListingBuyerActions
                 listingId={listing.id}
+                sellerId={listing.sellerId}
                 title={listing.title}
                 price={listing.price}
                 sellerName={listing.seller.fullName}

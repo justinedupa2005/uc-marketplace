@@ -72,6 +72,11 @@ Apply migrations in filename order:
    - Adds recipient-owned notifications, read-state RPCs, and atomic event
      triggers for messaging, reservations, meetups, verification, and existing
      administrator moderation. Does not backfill historical notifications.
+17. `20261001000000_complete_reporting_moderation.sql`
+   - Completes private student reports, reviewed listing reports, the admin
+     report queue, and reasoned, auditable account/listing moderation. The
+     existing verification review workflow remains the only way to approve
+     or reject student identity submissions.
 
 ## Applying these migrations to another project
 
@@ -507,6 +512,42 @@ and logout/login. Confirm that an unverified or suspended student can read
 their inbox but cannot use linked marketplace actions. Regenerate database
 types after applying the migration and remove the applied notification
 additions from the pending schema overlay in `src/types/database.ts`.
+
+## Apply Step 13 reporting and moderation
+
+Apply `20261001000000_complete_reporting_moderation.sql` after the Step 10,
+Step 11, and Step 12 migrations. It extends the existing listing-report
+structure and adds student reports, report-review metadata, private audit
+records, and administrator-only moderation RPCs. It does not change historic
+report decisions. Preview linked migration history with
+`npx.cmd supabase db push --dry-run --linked`; only apply in filename order
+after checking the target project and pending data migrations.
+
+Run `checks/reporting_moderation_security.sql` and
+`checks/reporting_moderation_rls_smoke.sql` after applying it, then rerun the
+existing authorization, listing-management, notification, reservation, and
+messaging smoke tests. The older checks are updated for the new audited RPCs
+and column-level report-note privacy. For separate seller, buyer, and admin
+browser sessions, follow the [Step 13 acceptance guide](../docs/reporting-moderation.md).
+
+The application uses the existing `report_listing` RPC and a new
+`report_student` RPC for private student submissions. The `admin_review_report`
+RPC changes only an open report to resolved or dismissed; it does not silently
+remove a listing or suspend a student. The admin must review context and use
+the explicit moderated account/listing action when warranted. Every account
+or listing moderation action requires a reason and writes a private audit row
+atomically with the business change. Previously exposed unaudited admin
+status/removal RPCs are no longer executable by authenticated clients.
+
+Student report subjects cannot read reporter identity, details, or private
+review notes. Reporters can read their own safe report columns; active admins
+can review all reports and retrieve private notes via an admin-only RPC.
+No service-role key is used by the application. This migration does not
+make normal students administrators or expose the private audit schema.
+
+Regenerate database types after applying the migration and remove the applied
+moderation overlay from `src/types/database.ts`. Until then, the pending
+overlay keeps local TypeScript aligned with the committed forward migration.
 
 ## Bootstrap the first administrator
 

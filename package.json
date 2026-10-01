@@ -10,7 +10,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types tests/listing-validation.test.mjs tests/listing-rules.test.mjs tests/marketplace-search.test.mjs tests/favorites-pagination.test.mjs tests/messaging.test.mjs tests/reservation-validation.test.mjs tests/reservation-rules.test.mjs tests/reservation-errors.test.mjs tests/notifications.test.mjs"
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types tests/listing-validation.test.mjs tests/listing-rules.test.mjs tests/marketplace-search.test.mjs tests/favorites-pagination.test.mjs tests/messaging.test.mjs tests/reservation-validation.test.mjs tests/reservation-rules.test.mjs tests/reservation-errors.test.mjs tests/notifications.test.mjs tests/moderation.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",

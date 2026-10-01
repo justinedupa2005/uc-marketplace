@@ -8,6 +8,7 @@ import { ListingThumbnail } from "@/features/messages/components/listing-thumbna
 import { ParticipantAvatar } from "@/features/messages/components/participant-avatar";
 import { VerificationBadge } from "@/features/listings/components/seller-card";
 import { getConversationDetails } from "@/features/messages/server/queries";
+import { ReportStudentDialog } from "@/features/moderation/components/report-student-dialog";
 
 export default async function ConversationPage({
   params,
@@ -65,13 +66,13 @@ export default async function ConversationPage({
             ← All messages
           </Link>
 
-          <div className="mt-2 flex items-center gap-3">
+          <div className="mt-2 flex flex-wrap items-center gap-3">
             <ParticipantAvatar
               name={conversation.otherStudentName}
               avatarUrl={conversation.otherStudentAvatarUrl}
               size="lg"
             />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h1 className="truncate text-xl font-bold">
                 {conversation.otherStudentName}
               </h1>
@@ -81,6 +82,10 @@ export default async function ConversationPage({
                 </div>
               )}
             </div>
+            <ReportStudentDialog
+              studentId={conversation.otherStudentId}
+              studentName={conversation.otherStudentName}
+            />
           </div>
 
           <div className="mt-4 rounded-xl border border-[#d9e3f7] bg-[#f7f9ff] p-3">

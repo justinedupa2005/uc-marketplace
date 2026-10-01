@@ -8,6 +8,7 @@ import { ActionNotice } from "@/components/action-notice";
 import { FavoriteButton } from "@/features/favorites/components/favorite-button";
 import { startListingConversation } from "@/features/listings/actions";
 import { ReportListingDialog } from "@/features/listings/components/report-listing-dialog";
+import { ReportStudentDialog } from "@/features/moderation/components/report-student-dialog";
 import {
   canFavoriteListing,
   canReportListing,
@@ -31,6 +32,7 @@ type ReservationSnapshot = {
 
 export function ListingBuyerActions({
   listingId,
+  sellerId,
   title,
   price,
   sellerName,
@@ -42,6 +44,7 @@ export function ListingBuyerActions({
   existingConversationId,
 }: {
   listingId: string;
+  sellerId: string;
   title: string;
   price: string;
   sellerName: string;
@@ -232,7 +235,12 @@ export function ListingBuyerActions({
               }}
             />
           )}
-          {canReportListing(status) && <ReportListingDialog listingId={listingId} />}
+          <div className="flex flex-wrap items-center gap-2">
+            {canReportListing(status) && (
+              <ReportListingDialog listingId={listingId} />
+            )}
+            <ReportStudentDialog studentId={sellerId} studentName={sellerName} />
+          </div>
         </div>
       </section>
 
