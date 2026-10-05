@@ -66,6 +66,8 @@ const nextConfig: NextConfig = {
       "/forgot-password",
       "/reset-password",
       "/account-status",
+      "/profile/:path*",
+      "/users/:path*",
       "/verification",
       "/admin/:path*",
       "/auth/confirm",

@@ -99,6 +99,11 @@ select
   now()
 from pg_temp.step11_subjects;
 
+-- Step 14 requires profile photos to reference real owned avatar objects.
+insert into storage.objects (bucket_id, name, owner_id)
+select 'avatars', id::text || '/avatar.png', id::text
+from pg_temp.step11_subjects;
+
 insert into public.profiles (
   id, full_name, student_id_number, course, year_level, avatar_path,
   role, verification_status, account_status
@@ -1078,6 +1083,10 @@ where seller_id in (select id from pg_temp.step11_subjects);
 
 delete from auth.users
 where id in (select id from pg_temp.step11_subjects);
+
+delete from storage.objects
+where bucket_id = 'avatars'
+  and owner_id in (select id::text from pg_temp.step11_subjects);
 
 delete from public.categories
 where id = (

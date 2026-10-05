@@ -25,8 +25,9 @@ export default async function MarketplaceLayout({
   const requestedPath = getSafeNextPath(
     (await headers()).get("x-uc-marketplace-path"),
   );
-  const isNotificationInbox = requestedPath.split("?", 1)[0] === "/notifications";
-  const access = isNotificationInbox
+  const pathname = requestedPath.split("?", 1)[0];
+  const isAccountPage = pathname === "/notifications" || pathname === "/profile" || pathname.startsWith("/profile/");
+  const access = isAccountPage
     ? await requireAuthenticatedProfile(requestedPath)
     : await requireActiveProfile(requestedPath);
   const authorizedDestination = getAuthorizedDestination(

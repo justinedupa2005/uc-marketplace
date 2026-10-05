@@ -78,9 +78,14 @@ export default async function AccountStatusPage() {
         <p className="mt-3 text-sm leading-6 text-[#444653]">{description}</p>
 
         {profile && (
-          <Link href="/notifications" className="mt-6 inline-flex min-h-11 items-center justify-center rounded-md border border-[#0038a8] px-5 text-sm font-semibold text-[#0038a8] hover:bg-[#e6eeff]">
-            View Notifications
-          </Link>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link href="/profile" className="inline-flex min-h-11 items-center justify-center rounded-md border border-[#0038a8] px-5 text-sm font-semibold text-[#0038a8] hover:bg-[#e6eeff]">
+              View Profile
+            </Link>
+            <Link href="/notifications" className="inline-flex min-h-11 items-center justify-center rounded-md border border-[#0038a8] px-5 text-sm font-semibold text-[#0038a8] hover:bg-[#e6eeff]">
+              View Notifications
+            </Link>
+          </div>
         )}
 
         <form action={logout} className="mt-7">

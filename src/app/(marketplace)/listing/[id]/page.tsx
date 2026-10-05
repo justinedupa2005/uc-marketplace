@@ -37,9 +37,11 @@ function getListingReturnPath(value: string | undefined) {
 
   try {
     const url = new URL(value, "https://uc-marketplace.local");
+    const isStudentProfile = url.pathname.startsWith("/users/") &&
+      listingIdSchema.safeParse(url.pathname.slice("/users/".length)).success;
     if (
       url.origin !== "https://uc-marketplace.local" ||
-      (url.pathname !== "/marketplace" && url.pathname !== "/favorites")
+      (url.pathname !== "/marketplace" && url.pathname !== "/favorites" && !isStudentProfile)
     ) {
       return null;
     }
@@ -75,7 +77,9 @@ export default async function ListingDetailsPage({
   const listingReturnPath = getListingReturnPath(firstValue(query.from));
   const backHref =
     listingReturnPath ?? (listing.isOwner ? "/my-listings" : "/marketplace");
-  const backLabel = listingReturnPath?.startsWith("/favorites")
+  const backLabel = listingReturnPath?.startsWith("/users/")
+    ? "Back to Student Profile"
+    : listingReturnPath?.startsWith("/favorites")
     ? "Back to Favorites"
     : listingReturnPath
       ? "Back to Marketplace"

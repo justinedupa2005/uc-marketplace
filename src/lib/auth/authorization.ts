@@ -108,10 +108,10 @@ export function getAuthorizedDestination(
     : "";
   const pathname = candidate.split("?", 1)[0];
 
-  // Account and verification updates must remain accessible even when a
-  // student cannot enter the marketplace. This exception covers only the
-  // recipient's notification inbox, not the linked marketplace resources.
-  if (profile && matchesRouteRoot(pathname, "/notifications")) {
+  // Students keep access to their own account and notification inbox while
+  // marketplace access is restricted. Mutations recheck active status, and
+  // linked marketplace resources retain their normal authorization checks.
+  if (profile && (matchesRouteRoot(pathname, "/notifications") || matchesRouteRoot(pathname, "/profile"))) {
     return candidate;
   }
 

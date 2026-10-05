@@ -314,13 +314,20 @@ type PendingModerationFunctions = {
   };
 };
 
+type PendingProfileViews = {
+  marketplace_profiles: Omit<GeneratedDatabase["public"]["Views"]["marketplace_profiles"], "Row"> & {
+    Row: GeneratedDatabase["public"]["Views"]["marketplace_profiles"]["Row"] & { created_at: string | null };
+  };
+};
+
 export type Database = Omit<GeneratedDatabase, "public"> & {
-  public: Omit<GeneratedDatabase["public"], "Functions" | "Tables"> & {
+  public: Omit<GeneratedDatabase["public"], "Functions" | "Tables" | "Views"> & {
     Tables: Omit<
       GeneratedDatabase["public"]["Tables"],
       keyof PendingReservationTables | keyof PendingNotificationTables | keyof PendingModerationTables
     > &
       PendingReservationTables & PendingNotificationTables & PendingModerationTables;
+    Views: Omit<GeneratedDatabase["public"]["Views"], keyof PendingProfileViews> & PendingProfileViews;
     Functions: GeneratedDatabase["public"]["Functions"] &
       PendingMessagingFunctions &
       PendingReservationFunctions & PendingNotificationFunctions & PendingModerationFunctions;

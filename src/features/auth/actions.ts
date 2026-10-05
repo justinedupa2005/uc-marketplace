@@ -1,6 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { RECOVERY_COOKIE_NAME } from "@/lib/auth/server";
@@ -28,11 +29,12 @@ export async function logout() {
   if (signedOut) {
     const cookieStore = await cookies();
     cookieStore.delete(RECOVERY_COOKIE_NAME);
+    revalidatePath("/", "layout");
   }
 
   redirect(
     signedOut
       ? "/login?authNotice=logged-out"
-      : "/login?loggedOut=failed",
+      : "/profile?logout=failed",
   );
 }

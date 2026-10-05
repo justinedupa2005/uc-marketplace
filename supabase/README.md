@@ -77,6 +77,10 @@ Apply migrations in filename order:
      report queue, and reasoned, auditable account/listing moderation. The
      existing verification review workflow remains the only way to approve
      or reject student identity submissions.
+18. `20261006000000_complete_profiles.sql`
+   - Adds the safe seller join date, verified year-level updates, immutable
+     owned avatar uploads, and protection against deleting a linked photo.
+     Uses the existing profiles table and public avatars bucket.
 
 ## Applying these migrations to another project
 
@@ -631,6 +635,45 @@ Only after reconciling history and passing the preflight checks should you run
 `npx.cmd supabase db push --linked`, followed by another migration list and the
 read-only security checks. Do not run `supabase db reset --linked` against the
 remote project.
+
+## Apply Step 14 profiles
+
+Apply `20261006000000_complete_profiles.sql` after all preceding migrations.
+It does not create a second profile table or a reviews feature. The private
+profile and account forms authenticate the current user; the seller page
+uses only `marketplace_profiles` and visible available/reserved listings.
+The public projection includes only the existing safe identity columns and
+`created_at`, with verified-active-student or active-admin access.
+
+Student names, course, and student ID remain locked after verification.
+Verified students may update year level; pending submissions keep all
+identity fields frozen. Suspended/disabled users can read their own profile,
+change their password, read notifications, and log out; profile/Storage
+mutations still require an active account.
+
+The existing `avatars` bucket remains public and accepts JPEG, PNG, and WebP
+uploads up to 2 MiB. New paths are `{userId}/{uuid}.{jpg|png|webp}`; existing
+owned `avatar.ext` objects remain readable. Uploads are immutable. Linking
+requires a real owned avatar object, and cleanup cannot delete the currently
+linked photo. Verification documents remain in their separate private bucket.
+
+Run `checks/profile_security.sql` and `checks/profile_rls_smoke.sql`, then the
+existing regression checks. All SQL fixtures roll back. These checks exercise
+database authorization; they do not substitute for Storage HTTP, browser, or
+Auth password/session acceptance tests. Follow [the profile acceptance guide](../docs/profile.md)
+before enabling the hosted feature.
+
+Password changes use the shared registration/reset password rules, verify
+the current password with Supabase Auth through a temporary non-persisted
+client, revoke that client's local session, and update through the existing
+authenticated client. The user's app session is preserved. When Auth requires
+reauthentication, the UI requests and validates its email code. Confirm SMTP
+delivery and password settings in the intended project; migrations do not
+configure hosted Auth. See [Supabase password security](https://supabase.com/docs/guides/auth/password-security).
+
+Regenerate database types after applying this migration and remove its
+`PendingProfileViews` addition from `src/types/database.ts`. Preview pending
+history with `npx.cmd supabase db push --dry-run --linked` before deploying.
 
 ## Auth URL and email configuration
 

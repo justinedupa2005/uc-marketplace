@@ -1,221 +1,105 @@
 import type { Metadata } from "next";
 import Image from "next/image";
-import Link from "next/link";
 
-import { logout } from "@/features/auth/actions";
-import { AppHeader } from "@/components/layout/app-header";
-import {
-  getAuthorizedDestination,
-  isVerifiedActiveStudent,
-  requireActiveProfile,
-} from "@/lib/auth/authorization";
-import { COURSE_OPTIONS } from "@/lib/auth/options";
+import { FormNotification } from "@/components/form-notification";
+import { NavigationLink } from "@/components/navigation-blocker";
+import { LogoutButton } from "@/features/profiles/components/logout-button";
+import { ProfileAvatar } from "@/features/profiles/components/profile-avatar";
+import { formatProfileJoined } from "@/features/profiles/rules";
+import { getOwnProfile } from "@/features/profiles/server/queries";
+import { isVerifiedActiveStudent } from "@/lib/auth/authorization";
+import { COURSE_OPTIONS, YEAR_LEVEL_OPTIONS } from "@/lib/auth/options";
 
-import { NotificationBell } from "../notification-bell";
+import { ProfileShell } from "./_components/profile-shell";
+import { ProfileUnavailable } from "./_components/profile-unavailable";
 
 export const metadata: Metadata = {
   title: "Profile | UC Marketplace",
-  description: "View your UC Marketplace profile and account options.",
+  description: "View your profile and manage your UC Marketplace account.",
 };
 
-const menuItems = [
-  { label: "My Purchases", icon: "purchases.svg", href: "#purchases" },
-  { label: "Reservations", icon: "clock.svg", href: "/reservations" },
-  { label: "Account Settings", icon: "account.svg", href: "#settings" },
-  { label: "Notifications", icon: "notifications.svg", href: "/notifications" },
-  { label: "Help Center", icon: "help.svg", href: "#help" },
-];
-
-function getYearLevelLabel(yearLevel: number | null) {
-  if (!yearLevel) {
-    return null;
-  }
-
-  const suffix =
-    yearLevel === 1 ? "st" : yearLevel === 2 ? "nd" : yearLevel === 3 ? "rd" : "th";
-  return `${yearLevel}${suffix} Year`;
-}
-
-const verificationLabels: Record<string, string> = {
+const verificationLabels = {
   unverified: "Unverified Student",
   pending: "Verification Pending",
   verified: "Verified Student",
   rejected: "Verification Needs Attention",
 };
 
-export default async function ProfilePage() {
-  const { supabase, user, profile: authorizationProfile } =
-    await requireActiveProfile("/profile");
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, course, year_level")
-    .eq("id", user.id)
-    .maybeSingle();
-  const hasMarketplaceAccess = isVerifiedActiveStudent(authorizationProfile);
+const accountLabels = { active: "Active", suspended: "Suspended", disabled: "Disabled" };
 
-  if (profileError || !profile) {
-    return (
-      <div className="min-h-screen bg-[#f9f9ff] text-[#121c2a]">
-        {!hasMarketplaceAccess && (
-          <AppHeader
-            notificationBell={<NotificationBell />}
-            variant="back"
-            title="Profile"
-            backHref={getAuthorizedDestination(authorizationProfile)}
-            showLogout
-            showMarketplaceNavigation={false}
-          />
-        )}
-        <main className="mx-auto w-full max-w-2xl px-6 py-12">
-          <section className="rounded-xl border border-[#c4c5d5] bg-white p-7 text-center shadow-sm">
-            <h1 className="text-2xl font-bold">Profile temporarily unavailable</h1>
-            <p className="mt-3 text-sm leading-6 text-[#444653]">
-              We couldn&apos;t load your profile details right now. Please refresh
-              the page or try again later.
-            </p>
-            <Link
-              href="/profile"
-              className="mt-6 inline-flex min-h-11 items-center justify-center rounded-md bg-[#0038a8] px-5 text-sm font-semibold text-white hover:bg-[#002576]"
-            >
-              Try Again
-            </Link>
-          </section>
-        </main>
-      </div>
-    );
+export default async function ProfilePage({ searchParams }: { searchParams: Promise<{ logout?: string | string[] }> }) {
+  const [{ profile, error, authorization }, params] = await Promise.all([getOwnProfile(), searchParams]);
+  const logoutFailed = params.logout === "failed" || (Array.isArray(params.logout) && params.logout[0] === "failed");
+  if (error || !profile) {
+    return <ProfileShell authorization={authorization} title="Profile"><ProfileUnavailable /></ProfileShell>;
   }
 
-  const fullName =
-    typeof profile?.full_name === "string"
-      ? profile.full_name
-      : "UC Student";
-  const initials = fullName
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
-  const course = COURSE_OPTIONS.find(
-    (courseOption) => courseOption.value === profile?.course,
-  )?.label;
-  const yearLevel = getYearLevelLabel(profile?.year_level ?? null);
-  const academicDetails =
-    course && yearLevel
-      ? `${course} - ${yearLevel}`
-      : course ?? yearLevel ?? "Student details not completed";
-  const verificationStatus = authorizationProfile.verification_status;
-  const verificationLabel =
-    authorizationProfile.role === "admin"
-      ? "Administrator"
-      : (verificationLabels[verificationStatus] ?? "Verification Unavailable");
-  const isVerified = verificationStatus === "verified";
-  const verificationMenuLabel =
-    verificationStatus === "pending"
-      ? "Verification Pending"
-      : verificationStatus === "rejected"
-        ? "Resubmit Verification"
-        : verificationStatus === "verified"
-          ? "Verification Status"
-          : "Verify Account";
-  const primaryAccountItem =
-    authorizationProfile.role === "admin"
-      ? {
-          label: "Review Verifications",
-          icon: "account.svg",
-          href: "/admin/verifications",
-        }
-      : {
-          label: verificationMenuLabel,
-          icon: "account.svg",
-          href: "/verification",
-        };
-  const accountMenuItems = hasMarketplaceAccess
-    ? [primaryAccountItem, ...menuItems]
-    : [primaryAccountItem];
+  const hasMarketplaceAccess = isVerifiedActiveStudent(authorization);
+  const joined = formatProfileJoined(profile.createdAt);
+  const course = COURSE_OPTIONS.find((option) => option.value === profile.course)?.label ?? profile.course;
+  const year = YEAR_LEVEL_OPTIONS.find((option) => Number(option.value) === profile.yearLevel)?.label;
+  const isStudent = profile.role === "student";
+  const isActive = profile.accountStatus === "active";
+  const isVerified = isStudent && profile.verificationStatus === "verified";
+  const menuItems = [
+    ...(profile.canEdit ? [{ label: "Edit Profile and Photo", icon: "account.svg", href: "/profile/edit" }] : []),
+    { label: "Change Password", icon: "account.svg", href: "/profile/change-password" },
+    ...(isActive ? [{
+      label: isStudent
+        ? profile.verificationStatus === "rejected" ? "Resubmit Verification" : profile.verificationStatus === "pending" ? "View Verification Status" : profile.verificationStatus === "verified" ? "Verification Details" : "Verify Account"
+        : "Admin Dashboard",
+      icon: "verified.svg",
+      href: isStudent ? "/verification" : "/admin",
+    }] : [{ label: "Account Status", icon: "account.svg", href: "/account-status" }]),
+    ...(hasMarketplaceAccess ? [
+      { label: "My Listings", icon: "purchases.svg", href: "/my-listings" },
+      { label: "Reservations", icon: "clock.svg", href: "/reservations" },
+      { label: "Favorites", icon: "nav-favorites.svg", href: "/favorites" },
+      { label: "Messages", icon: "nav-messages.svg", href: "/messages" },
+    ] : []),
+    { label: "Notifications", icon: "notifications.svg", href: "/notifications" },
+  ];
 
   return (
-    <div className="min-h-screen bg-[#f9f9ff] text-[#121c2a]">
-      {!hasMarketplaceAccess && (
-        <AppHeader
-          notificationBell={<NotificationBell />}
-          variant="back"
-          title="Profile"
-          backHref={getAuthorizedDestination(authorizationProfile)}
-          showLogout
-          showMarketplaceNavigation={false}
-        />
+    <ProfileShell authorization={authorization} title="Profile">
+      {logoutFailed && <FormNotification variant="error">We couldn&apos;t log you out. Please try again.</FormNotification>}
+      {!isActive && (
+        <FormNotification variant="error">
+          Your account is {profile.accountStatus}. Marketplace activity and profile editing are unavailable. You can still change your password, view account notifications, or log out.
+        </FormNotification>
       )}
-
-      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 pb-28 pt-8 md:pb-12">
-        <section className="overflow-hidden rounded-xl border border-[#c4c5d5] bg-white shadow-sm">
-          <div className="h-32 bg-[#0038a8]/10" />
-          <div className="-mt-24 flex flex-col items-center px-6 pb-7 text-center">
-            <div
-              className="flex size-24 items-center justify-center rounded-full border-4 border-white bg-[#e6eeff] text-3xl font-bold text-[#002576] shadow-sm"
-              aria-hidden="true"
-            >
-              {initials}
-            </div>
-            <h1 className="mt-5 text-2xl font-bold leading-8">{fullName}</h1>
-            <span
-              className={`mt-1 inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold tracking-[0.05em] ${
-                isVerified
-                  ? "bg-[#e6eeff] text-[#002576]"
-                  : "bg-[#f2f3f8] text-[#444653]"
-              }`}
-            >
-              {isVerified && (
-                <Image src="/assets/app/verified.svg" alt="" width={10} height={12} />
-              )}
-              {verificationLabel}
-            </span>
-            <p className="mt-3 text-base leading-6 text-[#444653]">
-              {academicDetails}
-            </p>
-
-            <dl className="mt-6 flex w-full max-w-sm items-center justify-center border-t border-[#c4c5d5] pt-4">
-              <div className="flex-1 px-4">
-                <dd className="text-xl font-bold leading-7 text-[#002576]">—</dd>
-                <dt className="text-sm leading-5 text-[#444653]">Items Sold</dt>
-              </div>
-              <div className="h-10 w-px bg-[#c4c5d5]" />
-              <div className="flex-1 px-4">
-                <dd className="text-base font-bold leading-7 text-[#002576]">
-                  —
-                </dd>
-                <dt className="text-sm leading-5 text-[#444653]">Reviews</dt>
-              </div>
-            </dl>
-          </div>
-        </section>
-
-        <nav aria-label="Profile settings" className="overflow-hidden rounded-xl border border-[#c4c5d5] bg-white shadow-sm">
-          {accountMenuItems.map((item) => (
-            <Link
-              key={item.label}
-              href={item.href}
-              className="flex min-h-[73px] items-center border-b border-[#c4c5d5] px-6 text-lg transition last:border-b-0 hover:bg-[#f9f9ff]"
-            >
-              <span className="mr-4 flex size-10 shrink-0 items-center justify-center rounded-full bg-[#e6eeff]">
-                <Image src={`/assets/app/${item.icon}`} alt="" width={20} height={20} />
-              </span>
-              <span className="flex-1">{item.label}</span>
-              <Image src="/assets/app/chevron-right.svg" alt="" width={8} height={12} />
-            </Link>
-          ))}
-          <form action={logout}>
-            <button
-              type="submit"
-              className="flex min-h-[73px] w-full items-center px-6 text-left text-lg font-semibold text-[#ba1a1a] transition hover:bg-[#ba1a1a]/5"
-            >
-              <span className="mr-4 flex size-10 shrink-0 items-center justify-center rounded-full bg-[#ba1a1a]/10">
-                <Image src="/assets/app/logout.svg" alt="" width={18} height={18} />
-              </span>
-              Logout
-            </button>
-          </form>
-        </nav>
-      </main>
-    </div>
+      <section className="overflow-hidden rounded-xl border border-[#c4c5d5] bg-white shadow-sm">
+        <div className="h-28 bg-[#0038a8]/10" />
+        <div className="-mt-16 flex flex-col items-center px-6 pb-7 text-center">
+          <ProfileAvatar avatarUrl={profile.avatarUrl} fullName={profile.fullName} className="border-4 border-white shadow-sm" />
+          <h1 className="mt-4 text-2xl font-bold leading-8">{profile.fullName ?? "Your profile"}</h1>
+          {!profile.fullName && <p className="mt-2 text-sm text-[#444653]">Full name not provided</p>}
+          <span className={`mt-3 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${isVerified ? "bg-[#e6eeff] text-[#002576]" : "bg-[#f2f3f8] text-[#444653]"}`}>
+            {isVerified && <Image src="/assets/app/verified.svg" alt="" width={10} height={12} />}
+            {isStudent ? verificationLabels[profile.verificationStatus] : "Administrator"}
+          </span>
+          <dl className="mt-6 grid w-full gap-5 border-t border-[#c4c5d5] pt-5 text-left sm:grid-cols-2">
+            {isStudent && (
+              <>
+                <div><dt className="text-xs font-semibold text-[#444653]">Course</dt><dd className="mt-1 text-sm font-semibold">{course ?? "Course not provided"}</dd></div>
+                <div><dt className="text-xs font-semibold text-[#444653]">Year level</dt><dd className="mt-1 text-sm font-semibold">{year ?? "Year level not provided"}</dd></div>
+              </>
+            )}
+            <div><dt className="text-xs font-semibold text-[#444653]">Account status</dt><dd className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${isActive ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"}`}>{accountLabels[profile.accountStatus]}</dd></div>
+            <div><dt className="text-xs font-semibold text-[#444653]">Date joined</dt><dd className="mt-1 text-sm font-semibold">{joined ?? "Joined date unavailable"}</dd></div>
+          </dl>
+        </div>
+      </section>
+      <nav aria-label="Profile and account options" className="overflow-hidden rounded-xl border border-[#c4c5d5] bg-white shadow-sm">
+        {menuItems.map((item) => (
+          <NavigationLink key={item.href} href={item.href} className="flex min-h-[73px] items-center border-b border-[#c4c5d5] px-6 text-base transition hover:bg-[#f9f9ff] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#0038a8]">
+            <span className="mr-4 flex size-10 shrink-0 items-center justify-center rounded-full bg-[#e6eeff]"><Image src={`/assets/app/${item.icon}`} alt="" width={20} height={20} /></span>
+            <span className="flex-1">{item.label}</span>
+            <Image src="/assets/app/chevron-right.svg" alt="" width={8} height={12} />
+          </NavigationLink>
+        ))}
+        <LogoutButton />
+      </nav>
+    </ProfileShell>
   );
 }

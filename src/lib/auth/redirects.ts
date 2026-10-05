@@ -4,6 +4,7 @@ const PROTECTED_ROUTE_ROOTS = [
   "/reservations",
   "/sell",
   "/profile",
+  "/users",
   "/messages",
   "/my-listings",
   "/listing",

@@ -1,6 +1,7 @@
-import Image from "next/image";
+import Link from "next/link";
 
 import type { ListingSeller } from "@/features/listings/types";
+import { ProfileAvatar } from "@/features/profiles/components/profile-avatar";
 
 export function VerificationBadge() {
   return (
@@ -14,12 +15,6 @@ export function VerificationBadge() {
 }
 
 export function SellerCard({ seller }: { seller: ListingSeller }) {
-  const initials = seller.fullName
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
   const details = [
     seller.course,
     seller.yearLevel ? `Year ${seller.yearLevel}` : null,
@@ -33,26 +28,26 @@ export function SellerCard({ seller }: { seller: ListingSeller }) {
         Seller
       </h2>
       <div className="mt-3 flex items-center gap-3">
-        <div className="relative flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#e6eeff] font-bold text-[#002576]">
-          {seller.avatarUrl ? (
-            <Image
-              src={seller.avatarUrl}
-              alt={`${seller.fullName}'s avatar`}
-              fill
-              unoptimized
-              sizes="48px"
-              className="object-cover"
-            />
-          ) : (
-            <span aria-hidden="true">{initials || "UC"}</span>
-          )}
-        </div>
+        <ProfileAvatar
+          avatarUrl={seller.avatarUrl}
+          fullName={seller.fullName}
+          size={48}
+          className="shrink-0"
+        />
         <div className="min-w-0">
           <p className="truncate font-bold text-[#121c2a]">{seller.fullName}</p>
           {details && <p className="mt-0.5 truncate text-xs text-[#5b6070]">{details}</p>}
           {seller.isVerified && <div className="mt-2"><VerificationBadge /></div>}
         </div>
       </div>
+      {seller.isVerified && (
+        <Link
+          href={`/users/${seller.id}`}
+          className="mt-3 inline-flex min-h-11 items-center rounded-md text-sm font-semibold text-[#0038a8] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0038a8]"
+        >
+          View Profile
+        </Link>
+      )}
     </section>
   );
 }

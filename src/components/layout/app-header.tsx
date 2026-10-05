@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { NavigationLink as Link } from "@/components/navigation-blocker";
 import { logout } from "@/features/auth/actions";
+import { LogoutSubmit } from "@/features/auth/components/logout-submit";
 
 type AppHeaderProps = (
   | {
@@ -83,14 +84,12 @@ export function AppHeader(props: AppHeaderProps) {
           {props.notificationBell}
           {props.showLogout ? (
             <form action={logout}>
-              <button
-                type="submit"
-                aria-label="Log out"
+              <LogoutSubmit
                 className="flex min-h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-[#ba1a1a] hover:bg-[#ba1a1a]/5"
               >
                 <Image src="/assets/app/logout.svg" alt="" width={18} height={18} />
                 <span className="hidden sm:inline">Log Out</span>
-              </button>
+              </LogoutSubmit>
             </form>
           ) : isBack ? (
             <button
