@@ -330,6 +330,14 @@ $$;
 
 -- Admin review and moderation notifications omit identity documents and
 -- rejection reasons. Repeated decisions/status writes create no duplicates.
+-- Step 15 requires upload-before-link even for privileged QA fixtures.
+insert into storage.objects (bucket_id, name, owner, owner_id, metadata)
+select 'student-verifications', subject.id::text || '/' || resource.id::text || '/student-id.jpg', subject.id, subject.id::text,
+  '{"mimetype":"image/jpeg","size":128}'::jsonb
+from pg_temp.step12_resources as resource join pg_temp.step12_subjects as subject
+  on subject.label = case when resource.label = 'verification_approve' then 'verify_approve' else 'verify_reject' end
+where resource.label like 'verification_%';
+
 insert into public.verifications (id, user_id, full_name_snapshot, student_id_number_snapshot,
   course_snapshot, year_level_snapshot, document_path)
 select resource.id, subject.id, 'Step Twelve ' || subject.label,
@@ -338,10 +346,6 @@ select resource.id, subject.id, 'Step Twelve ' || subject.label,
 from pg_temp.step12_resources as resource join pg_temp.step12_subjects as subject
   on subject.label = case when resource.label = 'verification_approve' then 'verify_approve' else 'verify_reject' end
 where resource.label like 'verification_%';
-insert into storage.objects (bucket_id, name, owner, owner_id, metadata)
-select 'student-verifications', document_path, user_id, user_id::text,
-  '{"mimetype":"image/jpeg","size":128}'::jsonb
-from public.verifications where id in (select id from pg_temp.step12_resources where label like 'verification_%');
 select pg_temp.step12_as('admin',
   'select public.review_verification((select id from pg_temp.step12_resources where label = ''verification_approve''), ''approved'', null)');
 select pg_temp.step12_as('admin',

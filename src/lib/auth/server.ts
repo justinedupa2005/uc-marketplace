@@ -3,33 +3,17 @@ import "server-only";
 import { cookies } from "next/headers";
 
 import { createClient } from "@/lib/supabase/server";
+import {
+  hasAuthenticationMethod,
+  RECOVERY_GRANT_MAX_AGE_SECONDS,
+  verifyRecoveryGrant,
+} from "@/lib/auth/recovery-grant";
 
 export const RECOVERY_COOKIE_NAME = "uc-marketplace-recovery";
-export const RECOVERY_COOKIE_MAX_AGE_SECONDS = 15 * 60;
+export const RECOVERY_COOKIE_MAX_AGE_SECONDS = RECOVERY_GRANT_MAX_AGE_SECONDS;
 
 export function hasRecoveryAuthenticationMethod(claims: unknown) {
-  if (!claims || typeof claims !== "object") {
-    return false;
-  }
-
-  const amr = (claims as { amr?: unknown }).amr;
-
-  if (!Array.isArray(amr)) {
-    return false;
-  }
-
-  return amr.some((entry) => {
-    if (typeof entry === "string") {
-      return entry === "recovery";
-    }
-
-    return (
-      entry !== null &&
-      typeof entry === "object" &&
-      "method" in entry &&
-      (entry as { method?: unknown }).method === "recovery"
-    );
-  });
+  return hasAuthenticationMethod(claims, "recovery");
 }
 
 export async function getValidatedUser() {
@@ -59,13 +43,11 @@ export async function hasRecoveryMarker(userId: string) {
     const { data, error } = await supabase.auth.getClaims();
     const claims = data?.claims;
 
-    return Boolean(
-      !error &&
-        claims?.sub === userId &&
-        typeof claims.session_id === "string" &&
-        marker === `${userId}:${claims.session_id}` &&
-        hasRecoveryAuthenticationMethod(claims),
-    );
+    if (error || claims?.sub !== userId || typeof claims.session_id !== "string") return false;
+    // Only a signed, time-bounded grant can establish app recovery provenance.
+    // Neither an OTP nor a legacy recovery session can recreate a plain cookie.
+    return verifyRecoveryGrant(marker, userId, claims.session_id)
+      && (hasAuthenticationMethod(claims, "otp") || hasRecoveryAuthenticationMethod(claims));
   } catch {
     return false;
   }

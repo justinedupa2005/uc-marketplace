@@ -85,7 +85,7 @@ export function ReportStudentDialog({
           setReason("");
           setDetails("");
         }}
-        className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-xl border border-[#c4c5d5] bg-white p-0 text-[#121c2a] shadow-2xl backdrop:bg-[#121c2a]/45"
+        className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-xl border border-[#c4c5d5] bg-white p-0 text-[#121c2a] shadow-2xl backdrop:bg-[#121c2a]/45"
       >
         <form onSubmit={submitReport} className="p-6 sm:p-7">
           <div className="flex items-start justify-between gap-4">

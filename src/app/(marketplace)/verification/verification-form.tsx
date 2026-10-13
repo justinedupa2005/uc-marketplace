@@ -51,9 +51,22 @@ export function VerificationForm() {
           maximum 5 MB.
         </p>
 
+        <input
+          id="school-id-image"
+          type="file"
+          name="schoolId"
+          accept="image/jpeg,image/png,image/webp"
+          required
+          disabled={pending}
+          onChange={chooseFile}
+          aria-label="School ID image"
+          aria-invalid={Boolean(fileError)}
+          aria-describedby={fileError ? "school-id-error" : undefined}
+          className="peer sr-only"
+        />
         <label
           htmlFor="school-id-image"
-          className="mt-5 flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-[#b7c5df] bg-[#f9faff] px-5 text-center transition hover:border-[#0038a8] hover:bg-[#e6eeff]"
+          className="mt-5 flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-[#b7c5df] bg-[#f9faff] px-5 text-center transition hover:border-[#0038a8] hover:bg-[#e6eeff] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#0038a8]"
         >
           <Image src="/assets/app/upload-camera.svg" alt="" width={36} height={34} />
           <span className="mt-3 text-sm font-semibold text-[#002576]">
@@ -63,17 +76,6 @@ export function VerificationForm() {
             {selectedFile?.name ?? "No file selected"}
           </span>
         </label>
-        <input
-          id="school-id-image"
-          type="file"
-          name="schoolId"
-          accept="image/jpeg,image/png,image/webp"
-          required
-          disabled={pending}
-          onChange={chooseFile}
-          aria-describedby={fileError ? "school-id-error" : undefined}
-          className="sr-only"
-        />
         {fileError && (
           <p id="school-id-error" role="alert" className="mt-3 text-sm text-[#ba1a1a]">
             {fileError}

@@ -2,75 +2,57 @@ import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 
 import {
-  hasRecoveryAuthenticationMethod,
   RECOVERY_COOKIE_MAX_AGE_SECONDS,
   RECOVERY_COOKIE_NAME,
 } from "@/lib/auth/server";
+import {
+  getRecoverySessionIdentity,
+  hasRecoveryGrantSecret,
+  issueRecoveryGrant,
+  parseRecoveryCallback,
+} from "@/lib/auth/recovery-grant";
 import { createClient } from "@/lib/supabase/server";
 
-function isSafeOpaqueValue(value: string | null, maximumLength: number) {
-  return Boolean(value && value.length <= maximumLength && !/[\u0000-\u001f\u007f]/.test(value));
-}
-
 export async function GET(request: NextRequest) {
-  const code = request.nextUrl.searchParams.get("code");
-  const tokenHash = request.nextUrl.searchParams.get("token_hash");
-  const requestedType = request.nextUrl.searchParams.get("type");
-  const flowId = request.nextUrl.searchParams.get("sb_flow_id");
+  const callback = parseRecoveryCallback(request.nextUrl.searchParams);
   const supabase = await createClient();
-  let verifiedRecovery = false;
   let exchangeSucceeded = false;
+  let exchangeUserId: string | null = null;
+  let marker: string | null = null;
 
   try {
-    if (
-      requestedType === "recovery" &&
-      isSafeOpaqueValue(tokenHash, 4096)
-    ) {
-      const { error } = await supabase.auth.verifyOtp({
-        token_hash: tokenHash!,
+    if (callback?.kind === "token_hash" && hasRecoveryGrantSecret()) {
+      const { data, error } = await supabase.auth.verifyOtp({
+        token_hash: callback.tokenHash,
         type: "recovery",
       });
-      exchangeSucceeded = !error;
-    } else if (isSafeOpaqueValue(code, 4096)) {
-      const validFlowId =
-        flowId && /^[A-Za-z0-9_-]{1,200}$/.test(flowId) ? flowId : null;
+      exchangeSucceeded = Boolean(!error && data.user && data.session);
+      exchangeUserId = exchangeSucceeded ? data.user!.id : null;
+    } else if (callback?.kind === "pkce" && hasRecoveryGrantSecret()) {
       const result = await supabase.auth.exchangeCodeForSession(
-        code!,
-        validFlowId ? { flowId: validFlowId } : undefined,
+        callback.code,
+        callback.flowId ? { flowId: callback.flowId } : undefined,
       );
-
-      exchangeSucceeded = !result.error;
+      exchangeSucceeded = Boolean(!result.error && result.data.user && result.data.session);
+      exchangeUserId = exchangeSucceeded ? result.data.user!.id : null;
     }
   } catch {
     exchangeSucceeded = false;
   }
 
-  let sessionId: string | null = null;
-
-  if (exchangeSucceeded) {
+  if (exchangeSucceeded && callback && exchangeUserId) {
     try {
       const { data, error } = await supabase.auth.getClaims();
-      const claims = data?.claims;
-      verifiedRecovery = Boolean(
-        !error &&
-          claims &&
-          hasRecoveryAuthenticationMethod(claims),
-      );
-      sessionId =
-        typeof claims?.session_id === "string" ? claims.session_id : null;
-    } catch {
-      verifiedRecovery = false;
-    }
-  }
-
-  let user: Awaited<ReturnType<typeof supabase.auth.getUser>>["data"]["user"] = null;
-
-  if (exchangeSucceeded) {
-    try {
       const result = await supabase.auth.getUser();
-      user = result.error ? null : result.data.user;
+      const user = result.error ? null : result.data.user;
+      const identity = !error && user?.id === exchangeUserId
+        ? getRecoverySessionIdentity(data?.claims, user.id, callback.kind)
+        : null;
+      if (identity) {
+        marker = issueRecoveryGrant(identity.userId, identity.sessionId);
+      }
     } catch {
-      user = null;
+      marker = null;
     }
   }
 
@@ -79,8 +61,8 @@ export async function GET(request: NextRequest) {
   redirectTo.pathname = "/reset-password";
   redirectTo.search = "";
 
-  if (verifiedRecovery && sessionId && user) {
-    cookieStore.set(RECOVERY_COOKIE_NAME, `${user.id}:${sessionId}`, {
+  if (marker) {
+    cookieStore.set(RECOVERY_COOKIE_NAME, marker, {
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",

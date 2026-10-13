@@ -26,6 +26,19 @@ npm.cmd run build
 
 `check` runs the TypeScript compiler, ESLint, and the unit-test suite.
 
+Step 15 adds database authorization/workflow checks, browser tests, security
+boundary scans and an isolated authenticated QA runner. See
+[`docs/security-workflow-testing.md`](docs/security-workflow-testing.md) for
+commands, environment safety guards and release gates, and the
+[execution record](docs/security-workflow-results.md) for completed versus
+unverified checks. The QA runner must never target the linked production project.
+
+With local Docker running, `npm.cmd run qa:local` creates and cleans up its own
+disposable stack for Auth, SMTP, Storage, Realtime, transaction-race and browser
+acceptance. Password recovery requires the server-only `AUTH_RECOVERY_SECRET`
+described in [the QA guide](docs/security-workflow-testing.md#required-password-recovery-signing-configuration)
+before using the feature or deploying; the disposable runner generates its own.
+
 ## Source organization
 
 ```text

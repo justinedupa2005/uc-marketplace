@@ -81,6 +81,14 @@ Apply migrations in filename order:
    - Adds the safe seller join date, verified year-level updates, immutable
      owned avatar uploads, and protection against deleting a linked photo.
      Uses the existing profiles table and public avatars bucket.
+19. `20261006010000_harden_storage_lifecycle.sql`
+   - Step 15 parent-first Storage/evidence locking and stale draft image-insert
+     protection. Preserves trusted available/reserved image edits. This is a
+     forward migration; do not rewrite previously applied files.
+
+The numbered list includes optional staged Realtime; the normal migration
+directory currently contains 18 files. Use actual versions, not list numbers,
+when reconciling migration history.
 
 ## Applying these migrations to another project
 
@@ -735,6 +743,36 @@ Password recovery links should still point to:
 
 Configure the Supabase Auth password policy to match the application: at least
 12 characters with uppercase, lowercase, number, and symbol requirements.
+
+The application also requires server-only `AUTH_RECOVERY_SECRET` before recovery
+callbacks can succeed: 32–64 random bytes encoded as 64–128 hexadecimal characters,
+persisted in the application's hosting secret manager and shared across instances.
+It is not a Supabase key or hosted Auth setting. Never expose it through
+`NEXT_PUBLIC_*` or Git. See [recovery-secret setup](../docs/security-workflow-testing.md#required-password-recovery-signing-configuration).
+
+## Step 15 security and workflow testing
+
+The safe `npm.cmd run test:db` command applies all normal migrations and executes
+the SQL checks in a new in-memory database without connecting to this linked
+project. Run `checks/storage_lifecycle_security.sql`,
+`checks/storage_lifecycle_rls_smoke.sql`, `checks/release_security.sql` and
+`checks/end_to_end_workflow.sql` along with the existing regressions on a
+disposable database. The smoke/workflow files create fixture rows and roll back;
+they are not read-only production catalog queries.
+
+Before applying `20261006010000_harden_storage_lifecycle.sql` to an existing
+project, reconcile migration history and confirm current image/evidence links
+have the real owned Storage objects expected by publication/submission. The
+migration neither deletes legacy data nor rewrites applied migrations. No hosted
+application of this migration is included in the local Step 15 implementation.
+
+See [the full QA runbook](../docs/security-workflow-testing.md) for real
+Auth/Storage/concurrency/Realtime/browser acceptance and separate email release
+gates. With local Docker running, `npm.cmd run qa:local` uses a new random local
+project, privately derives its keys, and runs captured-email Auth acceptance.
+It never reuses this linked project, applies hosted migrations or resets existing
+development data. These commands must actually pass before Step 15 is complete;
+implementing or discovering a test is not evidence of execution.
 
 ## Secrets
 

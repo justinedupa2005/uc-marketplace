@@ -215,6 +215,13 @@ where id in (
   where label in ('pending', 'rejected')
 );
 
+-- Step 15 validates real uploads when verification snapshots are linked.
+insert into storage.objects (bucket_id, name, owner_id)
+select 'student-verifications', subject.id::text || '/' || resource.id::text || '/student-id.png', subject.id::text
+from pg_temp.authz_subjects as subject
+join pg_temp.authz_resources as resource on resource.label = subject.label || '_verification'
+where subject.label in ('pending', 'rejected');
+
 insert into public.verifications (
   id,
   user_id,
@@ -400,7 +407,7 @@ select
   count(*) = 0,
   'visible objects: ' || count(*)::text
 from storage.objects
-where bucket_id = 'listing-images'
+where bucket_id in ('listing-images', 'student-verifications')
   and owner_id in (select id::text from pg_temp.authz_subjects);
 
 select pg_temp.expect_denied(

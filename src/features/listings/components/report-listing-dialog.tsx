@@ -1,5 +1,6 @@
 "use client";
 
+import { unstable_rethrow } from "next/navigation";
 import { useCallback, useRef, useState, useTransition } from "react";
 
 import { ActionNotice } from "@/components/action-notice";
@@ -28,17 +29,24 @@ export function ReportListingDialog({ listingId }: { listingId: string }) {
 
   function submitReport(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pending) return;
+    setFeedback(null);
     startTransition(async () => {
-      const result = await submitListingReport(listingId, reason, details);
-      setFeedback({
-        message: result.message,
-        variant: result.ok ? "success" : "error",
-      });
+      try {
+        const result = await submitListingReport(listingId, reason, details);
+        setFeedback({
+          message: result.message,
+          variant: result.ok ? "success" : "error",
+        });
 
-      if (result.ok) {
-        dialogRef.current?.close();
-        setReason("");
-        setDetails("");
+        if (result.ok) {
+          dialogRef.current?.close();
+          setReason("");
+          setDetails("");
+        }
+      } catch (error) {
+        unstable_rethrow(error);
+        setFeedback({ message: "Unable to submit this report. Please try again.", variant: "error" });
       }
     });
   }
@@ -47,7 +55,10 @@ export function ReportListingDialog({ listingId }: { listingId: string }) {
     <>
       <button
         type="button"
-        onClick={() => dialogRef.current?.showModal()}
+        onClick={() => {
+          setFeedback(null);
+          dialogRef.current?.showModal();
+        }}
         className="min-h-11 rounded-md px-3 text-sm font-semibold text-red-700 hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0038a8]"
       >
         Report
@@ -56,7 +67,11 @@ export function ReportListingDialog({ listingId }: { listingId: string }) {
       <dialog
         ref={dialogRef}
         aria-labelledby="report-listing-title"
-        className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-xl border border-[#c4c5d5] bg-white p-0 text-[#121c2a] shadow-2xl backdrop:bg-[#121c2a]/45"
+        aria-describedby="report-listing-description"
+        onCancel={(event) => {
+          if (pending) event.preventDefault();
+        }}
+        className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-xl border border-[#c4c5d5] bg-white p-0 text-[#121c2a] shadow-2xl backdrop:bg-[#121c2a]/45"
       >
         <form onSubmit={submitReport} className="p-6 sm:p-7">
           <div className="flex items-start justify-between gap-4">
@@ -64,12 +79,13 @@ export function ReportListingDialog({ listingId }: { listingId: string }) {
               <h2 id="report-listing-title" className="text-xl font-bold">
                 Report listing
               </h2>
-              <p className="mt-1 text-sm leading-6 text-[#5b6070]">
+              <p id="report-listing-description" className="mt-1 text-sm leading-6 text-[#5b6070]">
                 Reports are private and sent to marketplace moderators.
               </p>
             </div>
             <button
               type="button"
+              disabled={pending}
               onClick={() => dialogRef.current?.close()}
               aria-label="Close report dialog"
               className="flex size-9 shrink-0 items-center justify-center rounded-full text-xl hover:bg-[#f2f3f8]"

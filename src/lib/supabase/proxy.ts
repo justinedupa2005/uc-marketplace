@@ -7,6 +7,7 @@ import {
 } from "@/lib/auth/redirects";
 import { isAuthServiceUnavailable } from "@/lib/auth/errors";
 import type { Database } from "@/types/database";
+import { filterSupabaseSessionCookies } from "@/lib/supabase/session-cookies";
 
 function redirectWithSessionCookies(
   request: NextRequest,
@@ -51,10 +52,20 @@ function nextWithRequestedPath(request: NextRequest) {
 }
 
 export async function updateSession(request: NextRequest) {
-  let supabaseResponse = nextWithRequestedPath(request);
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const screened = await filterSupabaseSessionCookies(request.cookies.getAll(), supabaseUrl);
+  screened.removedCookieNames.forEach((name) => request.cookies.delete(name));
+
+  function createSessionResponse() {
+    const response = nextWithRequestedPath(request);
+    screened.removedCookieNames.forEach((name) => response.cookies.set(name, "", { path: "/", maxAge: 0, sameSite: "lax" }));
+    if (screened.removedCookieNames.length) response.headers.set("Cache-Control", "private, no-store, max-age=0");
+    return response;
+  }
+  let supabaseResponse = createSessionResponse();
 
   const supabase = createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    supabaseUrl,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
       cookies: {
@@ -66,7 +77,10 @@ export async function updateSession(request: NextRequest) {
             request.cookies.set(name, value),
           );
 
-          supabaseResponse = nextWithRequestedPath(request);
+          // Preserve malformed-cookie expirations even when SSR replaces this
+          // response. A trusted newly written session can override its own
+          // expiration below; unrelated cookies and PKCE verifiers are retained.
+          supabaseResponse = createSessionResponse();
 
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options),

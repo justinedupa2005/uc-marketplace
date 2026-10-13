@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseSource = supabaseUrl ? new URL(supabaseUrl) : null;
+const localSupabase = Boolean(supabaseSource && ["localhost", "127.0.0.1", "[::1]"].includes(supabaseSource.hostname));
 
 const authSecurityHeaders = [
   {
@@ -42,16 +44,21 @@ const nextConfig: NextConfig = {
     },
   },
   images: {
+    // Local Supabase QA serves images directly; do not relax the optimizer's
+    // private-network SSRF protection to test local Storage.
+    unoptimized: localSupabase,
     remotePatterns: supabaseUrl
       ? [
           {
-            protocol: "https",
-            hostname: new URL(supabaseUrl).hostname,
+            protocol: localSupabase && supabaseSource?.protocol === "http:" ? "http" : "https",
+            hostname: supabaseSource!.hostname,
+            port: supabaseSource!.port,
             pathname: "/storage/v1/object/sign/listing-images/**",
           },
           {
-            protocol: "https",
-            hostname: new URL(supabaseUrl).hostname,
+            protocol: localSupabase && supabaseSource?.protocol === "http:" ? "http" : "https",
+            hostname: supabaseSource!.hostname,
+            port: supabaseSource!.port,
             pathname: "/storage/v1/object/public/avatars/**",
           },
         ]
@@ -66,6 +73,15 @@ const nextConfig: NextConfig = {
       "/forgot-password",
       "/reset-password",
       "/account-status",
+      "/marketplace",
+      "/sell",
+      "/my-listings",
+      "/favorites",
+      "/listing/:path*",
+      "/listings/:path*",
+      "/messages/:path*",
+      "/reservations/:path*",
+      "/notifications/:path*",
       "/profile/:path*",
       "/users/:path*",
       "/verification",
