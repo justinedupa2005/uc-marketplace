@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createAcceptanceSummary, parseAcceptanceSummary } from "../scripts/qa/lib/acceptance-summary.mjs";
+import { createAcceptanceFailure, createAcceptanceSummary, parseAcceptanceFailure, parseAcceptanceSummary } from "../scripts/qa/lib/acceptance-summary.mjs";
 
 const complete = { apiChecks: 100, concurrencyScenarios: 3, realtimeScenarios: 4, emailAuthChecks: 12, authenticatedBrowser: true, apiOnly: false };
 test("sanitized summaries never promote local acceptance to deployed/external release approval", () => {
@@ -10,6 +10,29 @@ test("sanitized summaries never promote local acceptance to deployed/external re
   assert.equal(summary.deployedAcceptance, "not_run");
   assert.equal(JSON.stringify(summary).includes("must-not-be-exported"), false);
   assert.equal(JSON.stringify(summary).includes("private@example.test"), false);
+});
+
+test("child failure summaries expose only allowlisted phases and bounded metadata", () => {
+  const failure = createAcceptanceFailure({ phase: "api", code: "42501", httpStatus: 403, assertion: 12,
+    processReason: "exit", cleanupFailed: true, message: "private-token", rows: ["private-student"] });
+  assert.deepEqual(failure, { version: 1, status: "failed", phase: "api", code: "42501", httpStatus: 403, assertion: 12, processReason: "exit", cleanupFailed: true });
+  assert.doesNotMatch(JSON.stringify(failure), /private-/);
+  assert.throws(() => createAcceptanceFailure({ phase: "private-token" }));
+  const hidden = createAcceptanceFailure({ phase: "build", code: "sb_secret_private_token", httpStatus: "private-token", assertion: Infinity, processReason: "private-token" });
+  assert.equal(hidden.code, "unknown");
+  assert.equal(hidden.httpStatus, null);
+  assert.equal(hidden.assertion, null);
+  assert.equal(hidden.processReason, null);
+});
+
+test("parent failure parsing never returns private process text or ambiguous metadata", () => {
+  const failure = createAcceptanceFailure({ phase: "build", processReason: "exit" });
+  const line = `QA_FAILURE_JSON:${JSON.stringify({ ...failure, secret: "private-token" })}`;
+  assert.deepEqual(parseAcceptanceFailure(`private-SDK-output\n${line}\n`), failure);
+  for (const output of ["private-token", "QA_FAILURE_JSON:null", "QA_FAILURE_JSON:[]", "QA_FAILURE_JSON:{}", `${line}\n${line}`,
+    `QA_FAILURE_JSON:${JSON.stringify({ ...failure, status: "passed" })}`, `QA_FAILURE_JSON:${JSON.stringify({ ...failure, phase: "private-token" })}`]) {
+    assert.equal(parseAcceptanceFailure(output), null);
+  }
 });
 test("API-only results explicitly leave email and browser acceptance unrun", () => {
   const summary = createAcceptanceSummary({ ...complete, apiOnly: true, emailAuthChecks: 0, authenticatedBrowser: false });

@@ -7,7 +7,7 @@ import pg from "pg";
 import { assertQaDotenvSafety, getQaAppEnvironment } from "./lib/environment.mjs";
 import { assertLocalDockerEndpoint, buildLocalQaConfig, LOCAL_QA_PORTS, qaEnvironmentFromLocalStatus } from "./lib/local-stack.mjs";
 import { installQaInterruptHandler, launchQaProcess, resolveInstalledSupabaseBinary } from "./lib/process.mjs";
-import { executeSqlScript, summarizeDatabaseChecks } from "./lib/database-harness.mjs";
+import { executeSqlScript, formatDatabaseCheckDiagnostics, MESSAGING_GATE_SCENARIOS, summarizeDatabaseChecks } from "./lib/database-harness.mjs";
 import { parseAcceptanceSummary } from "./lib/acceptance-summary.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -32,6 +32,10 @@ async function runQuiet(command, args, label, { env = cliEnvironment, timeout = 
     const output = await owned.wait({ timeoutMs: timeout });
     if (!cleanup) interrupts.throwIfInterrupted();
     return output;
+  } catch (error) {
+    const failure = owned.getAcceptanceFailure();
+    if (failure) console.error(`QA acceptance failure: phase=${failure.phase}; code=${failure.code}; HTTP=${failure.httpStatus ?? "unknown"}; assertion=${failure.assertion ?? "unknown"}; process=${failure.processReason ?? "unknown"}; cleanup_failed=${failure.cleanupFailed}.`);
+    throw error;
   } finally { if (activeProcess === owned) activeProcess = null; }
 }
 
@@ -83,14 +87,16 @@ try {
   try {
     await connection.connect();
     await connection.query("set statement_timeout='30s'");
+    let messaging;
     try {
       const database = { exec: async (sql) => { interrupts.throwIfInterrupted(); return [await connection.query(sql)]; } };
-      const messaging = summarizeDatabaseChecks(await executeSqlScript(database, await readFile(path.join(root, "supabase/checks/messaging_rls_smoke.sql"), "utf8")));
+      messaging = summarizeDatabaseChecks(await executeSqlScript(database, await readFile(path.join(root, "supabase/checks/messaging_rls_smoke.sql"), "utf8")), { includeStatementIndex: true });
       if (messaging.count < 1 || messaging.failures.length) throw new Error("QA database-only messaging assertions failed.");
       console.log(`Database-only messaging gate passed ${messaging.count} assertions on the owned disposable database.`);
-    } catch {
+    } catch (error) {
       try { await connection.query("rollback"); await connection.query("reset role"); } catch { /* The enclosing finally closes this owned connection. */ }
-      throw new Error("QA database-only messaging gate did not pass; staged realtime publication was not applied.");
+      const diagnostic = formatDatabaseCheckDiagnostics(error, { summary: messaging, allowedScenarios: MESSAGING_GATE_SCENARIOS });
+      throw new Error(`QA database-only messaging gate did not pass (${diagnostic}); staged realtime publication was not applied.`);
     }
     interrupts.throwIfInterrupted();
     // This socket is validated against our newly prepared loopback ports only.

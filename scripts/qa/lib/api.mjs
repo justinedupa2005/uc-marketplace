@@ -1,49 +1,53 @@
 import { randomUUID } from "node:crypto";
 import { isExpectedDataDenial, isExpectedStorageDenial, isInvisibleDataResult, isSuccessfulApiResult, isUnchangedStorageResult } from "./api-results.mjs";
+import { qaFailureMetadata } from "./fixtures.mjs";
+import { setFixtureProfileState } from "./fixture-state.mjs";
 
 // A valid, non-private 1x1 PNG. Every object is uploaded through the tested
 // account's normal Storage API, not inserted into storage.objects by service role.
 const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWNgsFjxHwAC/AHgoLvpmAAAAABJRU5ErkJggg==", "base64");
 const rowCount = (result) => Array.isArray(result.data) ? result.data.length : result.data ? 1 : 0;
+class ApiCheckError extends Error {}
 
-export async function runApiChecks({ admin, accounts, runId }) {
+export async function runApiChecks(context) {
   try {
-    return await runChecks({ admin, accounts, runId });
+    return await runChecks(context);
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith("Direct API security check failed: ")) throw error;
+    if (error instanceof ApiCheckError) throw error;
     // SDK/network exceptions may contain endpoint or credential information.
-    throw new Error("Direct API security checks could not complete. Inspect the local QA service health.");
+    throw Object.assign(new Error("Direct API security checks could not complete. Inspect the local QA service health."), qaFailureMetadata({ error }));
   }
 }
 
-async function runChecks({ admin, accounts, runId }) {
+async function runChecks(context) {
+  const { admin, accounts, runId } = context;
   const { seller, buyer, competitor, suspended, pending, rejected } = accounts;
   const moderator = accounts.admin.client;
   let count = 0;
-  function check(condition, label) {
-    if (!condition) throw new Error(`Direct API security check failed: ${label}.`);
+  function check(condition, label, result) {
+    if (!condition) throw Object.assign(new ApiCheckError(`Direct API security check failed: ${label}.`), qaFailureMetadata(result), { qaAssertionIndex: count + 1 });
     count += 1;
   }
   async function success(request, label) {
     const result = await request;
-    check(isSuccessfulApiResult(result), label);
+    check(isSuccessfulApiResult(result), label, result);
     return result.data;
   }
   async function denied(request, label, codes) {
     const result = await request;
-    check(isExpectedDataDenial(result, codes), label);
+    check(isExpectedDataDenial(result, codes), label, result);
   }
   async function storageDenied(request, label) {
     const result = await request;
-    check(isExpectedStorageDenial(result), label);
+    check(isExpectedStorageDenial(result), label, result);
   }
   async function invisible(request, label, codes) {
     const result = await request;
-    check(isInvisibleDataResult(result, codes), label);
+    check(isInvisibleDataResult(result, codes), label, result);
   }
   async function unchanged(request, inspect, expected, label) {
     const result = await request;
-    check(isInvisibleDataResult(result), `${label}: unauthorized mutation returns no changed rows`);
+    check(isInvisibleDataResult(result), `${label}: unauthorized mutation returns no changed rows`, result);
     const current = await success(inspect, `${label}: trusted state inspection`);
     check(Object.entries(expected).every(([key, value]) => current?.[key] === value), `${label}: persisted values remain unchanged`);
   }
@@ -55,7 +59,7 @@ async function runChecks({ admin, accounts, runId }) {
   // from expected RLS-empty reads in the later negative cases.
   for (const account of Object.values(accounts)) {
     const auth = await account.client.auth.getUser();
-    check(!auth.error && auth.data.user?.id === account.id, "dedicated account has a validated Auth identity");
+    check(!auth.error && auth.data.user?.id === account.id, "dedicated account has a validated Auth identity", auth);
   }
   check((await profileState(accounts.admin)).role === "admin", "admin authority comes from profiles.role");
   check((await profileState(seller)).verification_status === "verified", "seller is verified");
@@ -77,7 +81,9 @@ async function runChecks({ admin, accounts, runId }) {
 
   // Exercise student-verification rejection, resubmission, and approval on a
   // competitor-owned fixture. Main pending/rejected browser fixtures stay intact.
-  await success(admin.from("profiles").update({ verification_status: "rejected" }).eq("id", competitor.id), "prepare isolated competitor verification fixture");
+  check(await setFixtureProfileState(context, competitor.id, {
+    role: "student", verification_status: "rejected", account_status: "active",
+  }) === competitor.id, "prepare isolated competitor verification fixture");
   async function submitCompetitorVerification() {
     const verificationId = randomUUID();
     const documentPath = `${competitor.id}/${verificationId}/student-id.png`;
@@ -95,13 +101,13 @@ async function runChecks({ admin, accounts, runId }) {
   await success(moderator.rpc("review_verification", { p_verification_id: secondVerification.verificationId, p_decision: "approved" }), "authorized admin approves resubmitted verification");
   check((await profileState(competitor)).verification_status === "verified", "verification approval unlocks the competitor account");
   const adminDocument = await moderator.storage.from("student-verifications").download(secondVerification.documentPath);
-  check(!adminDocument.error && adminDocument.data?.size > 0, "admin can privately review school-ID bytes");
+  check(!adminDocument.error && adminDocument.data?.size > 0, "admin can privately review school-ID bytes", adminDocument);
   await storageDenied(buyer.client.storage.from("student-verifications").download(secondVerification.documentPath), "another student cannot download private school ID");
   await invisible(buyer.client.from("verifications").select("id,document_path,rejection_reason").eq("user_id", competitor.id), "another student's verification details are not returned");
   await storageDenied(buyer.client.storage.from("student-verifications").createSignedUrl(secondVerification.documentPath, 60), "another student cannot sign private school-ID access");
   const publicSchoolIdUrl = buyer.client.storage.from("student-verifications").getPublicUrl(secondVerification.documentPath).data.publicUrl;
   const publicSchoolIdResponse = await fetch(publicSchoolIdUrl, { redirect: "manual" });
-  check([400, 401, 403, 404].includes(publicSchoolIdResponse.status), "school-ID bucket cannot be downloaded through a public object URL");
+  check([400, 401, 403, 404].includes(publicSchoolIdResponse.status), "school-ID bucket cannot be downloaded through a public object URL", { status: publicSchoolIdResponse.status });
 
   const categories = await success(seller.client.from("categories").select("id").eq("is_active", true).limit(1), "an active listing category exists");
   check(Boolean(categories?.[0]?.id), "listing fixture has a real active category");
@@ -127,7 +133,7 @@ async function runChecks({ admin, accounts, runId }) {
   const visible = await success(buyer.client.from("listings").select("id,title,price,status,seller_id").eq("id", listing.id).single(), "buyer sees persisted available listing");
   check(visible.status === "available" && visible.seller_id === seller.id && visible.title === editArgs.p_title, "listing has real seller, owner edit, and available state");
   const imageDownload = await buyer.client.storage.from("listing-images").download(listing.path);
-  check(!imageDownload.error && imageDownload.data?.size > 0, "eligible buyer can read available listing image");
+  check(!imageDownload.error && imageDownload.data?.size > 0, "eligible buyer can read available listing image", imageDownload);
   const found = await success(buyer.client.from("listings").select("id,price").eq("seller_id", seller.id).ilike("title", `%${runId}%`).eq("category_id", categoryId).eq("condition", "good").gte("price", 500).lte("price", 1000), "real title search with category/condition/price filters succeeds");
   check(found.length === 1 && found[0].id === listing.id, "combined search returns only matching listing");
   const described = await success(buyer.client.from("listings").select("id").eq("id", listing.id).ilike("description", "%DESCRIPTION-ONLY-KEYWORD%"), "description search is case-insensitive");
@@ -144,10 +150,10 @@ async function runChecks({ admin, accounts, runId }) {
   await storageDenied(buyer.client.storage.from("listing-images").upload(listing.path, image, { contentType: "image/png", upsert: true }), "buyer cannot overwrite another seller's image");
   await storageDenied(buyer.client.storage.from("listing-images").upload(`${seller.id}/${listing.id}/${randomUUID()}.png`, image, { contentType: "image/png", upsert: false }), "buyer cannot upload into another seller's folder");
   const crossDelete = await buyer.client.storage.from("listing-images").remove([listing.path]);
-  check(isUnchangedStorageResult(crossDelete), "buyer Storage deletion changes no other seller objects");
+  check(isUnchangedStorageResult(crossDelete), "buyer Storage deletion changes no other seller objects", crossDelete);
   check(!(await seller.client.storage.from("listing-images").download(listing.path)).error, "seller image survives unauthorized deletion");
   const referencedDelete = await seller.client.storage.from("listing-images").remove([listing.path]);
-  check(isUnchangedStorageResult(referencedDelete), "even owner cannot delete a currently referenced published image");
+  check(isUnchangedStorageResult(referencedDelete), "even owner cannot delete a currently referenced published image", referencedDelete);
 
   const avatarPath = `${buyer.id}/${randomUUID()}.png`;
   await denied(buyer.client.from("profiles").update({ avatar_path: `${buyer.id}/${randomUUID()}.png` }).eq("id", buyer.id), "profile cannot link an avatar object that does not exist", ["23514"]);
@@ -156,11 +162,11 @@ async function runChecks({ admin, accounts, runId }) {
   await denied(seller.client.from("profiles").update({ avatar_path: avatarPath }).eq("id", seller.id), "profile cannot link another student's avatar", ["23514"]);
   await storageDenied(seller.client.storage.from("avatars").upload(avatarPath, image, { contentType: "image/png", upsert: true }), "avatar overwrite is owner-scoped and immutable");
   const referencedAvatarDelete = await buyer.client.storage.from("avatars").remove([avatarPath]);
-  check(isUnchangedStorageResult(referencedAvatarDelete), "linked avatar object cannot be removed prematurely");
+  check(isUnchangedStorageResult(referencedAvatarDelete), "linked avatar object cannot be removed prematurely", referencedAvatarDelete);
   check(!(await buyer.client.storage.from("avatars").download(avatarPath)).error, "linked avatar remains present");
   await success(buyer.client.from("profiles").update({ avatar_path: null }).eq("id", buyer.id), "student unlinks own avatar");
   const avatarRemoval = await buyer.client.storage.from("avatars").remove([avatarPath]);
-  check(!avatarRemoval.error && rowCount(avatarRemoval) === 1, "unreferenced owner avatar can be cleaned up");
+  check(!avatarRemoval.error && rowCount(avatarRemoval) === 1, "unreferenced owner avatar can be cleaned up", avatarRemoval);
 
   for (let attempt = 0; attempt < 2; attempt += 1) check(await success(buyer.client.rpc("set_listing_favorite", { p_listing_id: listing.id, p_should_favorite: true }), "idempotent favorite insertion succeeds") === true, "requested favorite state is persisted");
   const favorites = await success(buyer.client.from("favorites").select("user_id,listing_id").eq("listing_id", listing.id), "buyer can refresh own favorite");
@@ -251,7 +257,7 @@ async function runChecks({ admin, accounts, runId }) {
   check(notificationRows.every((row) => !row.message.includes("QA private meetup notes") && !row.message.includes("Hi, is this QA calculator")), "notifications do not duplicate private message/meetup content");
   await invisible(seller.client.from("notifications").select("id,message").eq("user_id", buyer.id), "student cannot read another recipient's notifications");
   const crossRead = await seller.client.rpc("mark_notification_read", { p_notification_id: notificationRows[0].id });
-  check(isExpectedDataDenial(crossRead, ["42501"]) || (isSuccessfulApiResult(crossRead) && crossRead.data === false), "student cannot mark another recipient's notice read");
+  check(isExpectedDataDenial(crossRead, ["42501"]) || (isSuccessfulApiResult(crossRead) && crossRead.data === false), "student cannot mark another recipient's notice read", crossRead);
   await denied(buyer.client.from("notifications").insert({ user_id: seller.id, type: "message", title: "Forged", message: "Forged", event_key: randomUUID() }), "student cannot forge notifications");
 
   const listingReportId = await success(buyer.client.rpc("report_listing", { p_listing_id: moderatedListing.id, p_reason: "misleading", p_details: "QA listing reporting test with sufficient detail." }), "buyer reports listing privately");
@@ -275,7 +281,7 @@ async function runChecks({ admin, accounts, runId }) {
   await success(buyer.client.auth.signOut({ scope: "local" }), "buyer logout revokes current session");
   await invisible(buyer.client.from("reservations").select("id").eq("id", reservationId), "logged-out buyer cannot read private reservation");
   const login = await buyer.client.auth.signInWithPassword({ email: buyer.email, password: buyer.password });
-  check(!login.error && login.data.user?.id === buyer.id, "buyer can sign back in with retained QA credentials");
+  check(!login.error && login.data.user?.id === buyer.id, "buyer can sign back in with retained QA credentials", login);
   const persisted = await success(buyer.client.from("reservations").select("status").eq("id", reservationId).single(), "private completed reservation reloads after logout/login");
   check(persisted.status === "completed", "completed state survives a fresh Auth session");
   check((await profileState(buyer)).account_status === "active" && (await profileState(competitor)).verification_status === "verified", "API suite restores buyer/competitor states for browser tests");

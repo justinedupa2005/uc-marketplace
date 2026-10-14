@@ -1,7 +1,8 @@
 -- Self-contained transactional messaging RPC/RLS matrix.
 -- Run after 20260927000000_complete_messaging.sql. Realtime is tested
 -- separately with two browser sessions after the database-only flow passes.
--- Fixtures are removed before commit. The final row must report all_passed.
+-- Read the result before rolling back every fixture. The summary row must
+-- report all_passed. Do not delete Storage catalog rows or bypass its guards.
 
 begin;
 
@@ -803,23 +804,9 @@ select pg_temp.step10_messaging_expect_rejected(
 
 reset role;
 
-delete from public.reservations
-where buyer_id in (select id from pg_temp.step10_messaging_subjects)
-  or seller_id in (select id from pg_temp.step10_messaging_subjects);
-delete from public.listings
-where seller_id in (select id from pg_temp.step10_messaging_subjects);
-delete from auth.users
-where id in (select id from pg_temp.step10_messaging_subjects);
-delete from storage.objects
-where bucket_id = 'avatars'
-  and owner_id in (select id::text from pg_temp.step10_messaging_subjects);
-delete from public.categories
-where id = (
-  select id from pg_temp.step10_messaging_resources where label = 'category'
-);
-
-commit;
-
+-- Return the assertions while their temporary table exists. All Auth, profile,
+-- listing, message, notification and Storage metadata fixtures are SQL-only;
+-- rollback removes them atomically without touching Storage's deletion guard.
 select
   count(*) as tests_run,
   count(*) filter (where passed) as tests_passed,
@@ -832,3 +819,5 @@ select
     '[]'::jsonb
   ) as failures
 from pg_temp.step10_messaging_results;
+
+rollback;

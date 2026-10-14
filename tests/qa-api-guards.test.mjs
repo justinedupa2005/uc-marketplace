@@ -2,13 +2,77 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { StorageApiError } from "@supabase/supabase-js";
 import { isExpectedDataDenial, isExpectedStorageDenial, isInvisibleDataResult, isSuccessfulApiResult, isSuccessfulEmptyResult, isUnchangedStorageResult } from "../scripts/qa/lib/api-results.mjs";
-import { cleanupFixtures, requireResult } from "../scripts/qa/lib/fixtures.mjs";
+import { cleanupFixtures, qaFailureMetadata, requireResult } from "../scripts/qa/lib/fixtures.mjs";
+import { runApiChecks } from "../scripts/qa/lib/api.mjs";
 
 const denied = (code, status = 403) => ({ data: null, error: { code }, status });
 
 test("QA service errors expose only bounded standard error codes, not response text", () => {
   assert.throws(() => requireResult({ error: { code: "42501", message: "sensitive response content" } }, "Fixture"), /^Error: Fixture failed \(42501\)\.$/);
   assert.throws(() => requireResult({ error: { code: "https://credential@private.test/token", message: "sensitive response content" } }, "Fixture"), /^Error: Fixture failed \(service_error\)\.$/);
+});
+
+test("failure metadata allows known service codes and bounded HTTP statuses without retaining responses", () => {
+  assert.deepEqual(qaFailureMetadata(denied("42501", 403)), { qaErrorCode: "42501", qaHttpStatus: 403 });
+  assert.deepEqual(qaFailureMetadata(denied("PGRST202", 404)), { qaErrorCode: "PGRST202", qaHttpStatus: 404 });
+  assert.deepEqual(qaFailureMetadata({ error: new StorageApiError("private response", 403, "AccessDenied") }), { qaErrorCode: "AccessDenied", qaHttpStatus: 403 });
+  assert.deepEqual(qaFailureMetadata({ error: { code: "email_not_confirmed", status: 400 } }), { qaErrorCode: "email_not_confirmed", qaHttpStatus: 400 });
+  for (const status of [true, [], {}, 0, 99, 600, Infinity, NaN, "403 credential", "0403", "3e2"]) {
+    assert.deepEqual(qaFailureMetadata({ data: ["private row"], error: { code: "private_token_value", status, message: "private response", details: "private details" } }), { qaErrorCode: "service_error", qaHttpStatus: null });
+  }
+  assert.deepEqual(qaFailureMetadata({ error: { code: "TOKEN", statusCode: "401" } }), { qaErrorCode: "service_error", qaHttpStatus: 401 });
+});
+
+test("fixture failures retain only allowlisted primitive metadata and no original cause", () => {
+  assert.throws(() => requireResult({ data: { password: "private" }, error: { code: "private_token_value", status: 503, message: "private response", details: "private detail" } }, "Fixture"), (error) => {
+    assert.equal(error.message, "Fixture failed (service_error).");
+    assert.deepEqual(Object.keys(error), ["qaErrorCode", "qaHttpStatus"]);
+    assert.equal(error.qaErrorCode, "service_error");
+    assert.equal(error.qaHttpStatus, 503);
+    assert.equal(error.cause, undefined);
+    assert.equal(JSON.stringify(error).includes("private"), false);
+    return true;
+  });
+});
+
+test("direct API failures expose the numeric assertion and safe returned Auth diagnostics", async () => {
+  const context = { runId: "mock-run", admin: {}, accounts: { admin: { id: "mock-account", client: { auth: {
+    async getUser() { return { data: { user: null }, error: { code: "unexpected_failure", status: 503, message: "private backend response" } }; },
+  } } } } };
+  await assert.rejects(runApiChecks(context), (error) => {
+    assert.equal(error.message, "Direct API security check failed: dedicated account has a validated Auth identity.");
+    assert.deepEqual({ index: error.qaAssertionIndex, code: error.qaErrorCode, status: error.qaHttpStatus }, { index: 1, code: "unexpected_failure", status: 503 });
+    assert.equal(error.cause, undefined);
+    assert.equal(JSON.stringify(error).includes("private"), false);
+    return true;
+  });
+});
+
+test("direct API request failures preserve assertion numbering and PostgREST diagnostics", async () => {
+  const client = {
+    auth: { async getUser() { return { data: { user: { id: "mock-account" } }, error: null }; } },
+    from() { return { select() { return { eq() { return { async single() { return denied("PGRST202", 404); } }; } }; } }; },
+  };
+  await assert.rejects(runApiChecks({ runId: "mock-run", admin: {}, accounts: { admin: { id: "mock-account", client } } }), (error) => {
+    assert.equal(error.message, "Direct API security check failed: own private profile remains readable.");
+    assert.deepEqual({ index: error.qaAssertionIndex, code: error.qaErrorCode, status: error.qaHttpStatus }, { index: 2, code: "PGRST202", status: 404 });
+    return true;
+  });
+});
+
+test("thrown SDK messages cannot impersonate a trusted API assertion and leak diagnostics", async () => {
+  const context = { runId: "mock-run", admin: {}, accounts: { admin: { id: "mock-account", client: { auth: {
+    async getUser() { throw Object.assign(new Error("Direct API security check failed: private credentials."), { code: "request_timeout", status: 503 }); },
+  } } } } };
+  await assert.rejects(runApiChecks(context), (error) => {
+    assert.equal(error.message, "Direct API security checks could not complete. Inspect the local QA service health.");
+    assert.equal(error.qaErrorCode, "request_timeout");
+    assert.equal(error.qaHttpStatus, 503);
+    assert.equal(error.qaAssertionIndex, undefined);
+    assert.equal(error.cause, undefined);
+    assert.equal(JSON.stringify(error).includes("private"), false);
+    return true;
+  });
 });
 
 test("negative Data API checks require an expected SQLSTATE, not just an error", () => {

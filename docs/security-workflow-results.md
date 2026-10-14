@@ -119,3 +119,122 @@ GitHub job is available but has not been dispatched from this workspace.
 External student-inbox SMTP delivery, aged-session reauthentication, signed-URL
 expiry and intended deployed-project acceptance remain separate release gates.
 Step 15 is not fully accepted, and the MVP is not declared release-ready.
+
+## Native Docker follow-up: 2026-10-13
+
+Docker Desktop is now available. This follow-up started from published commit
+`9623a3b0f9450ace97b5314a060c3e0b9a4f6aca`. The earlier unavailable-runtime
+record above remains historical, not the status of this follow-up.
+
+The native messaging gate originally completed its assertions but failed during
+direct `storage.objects` cleanup, which native Storage now protects with a
+statement-level trigger. The smoke test now selects its summary inside the
+transaction and rolls back all fixtures. No deletion-protection flag, trigger
+disable, RLS change or hosted migration was used. A new regression runs the
+smoke twice with native-style deletion protection enabled and checks that fixture
+counts, seeded categories and protection remain unchanged.
+
+Both fresh disposable projects `ucmarketplace-qa-f1d6760890354e97` and
+`ucmarketplace-qa-5c31e436cc01cd4c` passed all **36 native messaging assertions**
+and then entered full acceptance. The second run's new sanitized diagnostics
+identified a later provisioning failure: **SQLSTATE 42501 / HTTP 403**. Scoped
+diagnosis on the same owned project confirmed the first admin fixture-state
+update failed. Table SELECT/UPDATE grants and both API-key formats were valid;
+the profile constraint calls a private course-validation function that does not
+grant execution to `service_role`.
+
+Trusted fixture state setup now uses a parameterized database transaction that
+locks and verifies the recorded account's server-owned run marker before writing.
+This changes only fixture preparation, not application permissions or ordinary
+student/admin API tests. Child failure reports expose only allowlisted primitive
+metadata; raw SQL, credentials, service responses and observed records remain
+private. No passing acceptance summary was exported by the failed runs.
+
+Final verification for these fixes:
+
+- `npm.cmd run check`: TypeScript, ESLint and **246 tests** passed; 13 suites,
+  zero failures, cancellations or skips. Includes the protected fixture-state
+  function-ACL reproduction and ownership/rollback regressions.
+- `npm.cmd run test:db`: **535 assertions across 18 migrations**, zero failures.
+- `npm.cmd run qa:security:bundles`: **216 source modules / 48 browser chunks**
+  passed. No application source or production permission migration was changed.
+- Fresh native project `ucmarketplace-qa-846c7b8b9127d36d`: the production QA
+  build, native messaging gate (**36 assertions**), account provisioning, direct
+  API checks and real concurrency checks completed before the Realtime phase
+  failed. Its failure report recorded `phase=realtime`, with successful cleanup.
+- A scoped diagnostic on that same owned project provisioned all seven accounts
+  successfully and confirmed `service_role` has neither private-schema usage
+  nor execution permission for the course-validation function. Realtime then
+  failed with the controlled label **competitor INSERT delivery timed out**:
+  its initial positive-control delivery did not arrive within the bounded wait.
+  A connected subscription alone was not accepted as delivery/denial evidence.
+- Every project started/restarted by this follow-up was stopped by its exact
+  owned project ID. Scoped fixture cleanup succeeded; backups and ignored
+  scratch files remain available for diagnosis. `git diff --check` passed.
+
+The original messaging cleanup failure and protected fixture-state failure are
+fixed. Full local acceptance is **not passed**: live Realtime still fails, while
+SMTP Auth and authenticated browser gates were not reached. No completed passing
+summary was exported, and no hosted migration, deployment, commit or push was
+performed in this follow-up. Realtime delivery requires separate diagnosis;
+external email/deployed acceptance and the earlier release gates remain required.
+
+## Realtime readiness fix: 2026-10-14
+
+The previous control-message timeout was a subscribe/write timing race: the
+test created its first message after WebSocket `SUBSCRIBED`, before the separate
+PostgreSQL change listener acknowledged readiness. The QA observer now requires
+both the join and `system` / `postgres_changes` / `ok` acknowledgement before
+writing, including after reconnect. Backend errors fail closed without retaining
+raw system payloads. Broadcast readiness is not treated as CDC readiness.
+This follows [Supabase's documented timing-gap guidance](https://supabase.com/docs/guides/troubleshooting/realtime-postgres-changes-troubleshooting#step-6-writing-right-after-subscribed).
+
+A native validation on the previously owned disposable project
+`ucmarketplace-qa-846c7b8b9127d36d` passed **all four Realtime scenarios**:
+two-way participant INSERT delivery, recipient read-state UPDATE delivery,
+third-account denial bracketed by authorized positive controls, and reconnect
+with authorized history catch-up followed by resumed delivery. Four PostgreSQL
+readiness acknowledgements and zero backend errors were observed. Its seven
+run-owned accounts/files were cleaned up and only that project was stopped.
+No RLS, database grant, hosted publication or hosted data was changed.
+
+The chat page had the same startup gap. It now uses a tested lifecycle helper
+that tracks join and CDC readiness separately, queues a fresh authorized history
+read if readiness arrives during an earlier fetch, and declares live connection
+only after current history catch-up succeeds. Missing readiness becomes offline
+after 15 seconds; bounded fallback reads preserve backoff until CDC recovers.
+Unmount cancels timers and ignores late results/events. Existing message merge,
+focus/read guards and ordinary account permissions remain intact.
+
+`npm.cmd run check` passed TypeScript, ESLint and **262 regression tests**,
+13 suites with zero failures, cancellations or skips. This includes eight QA
+readiness regressions and eight chat lifecycle regressions, using actual helper
+exports rather than source-text matching. A fresh full acceptance run is recorded
+below when its scoped cleanup finishes; the four-scenario run alone does not
+certify SMTP, authenticated browsers or deployed/external acceptance.
+
+Final verification in this continuation:
+
+- Fresh embedded SQL: **535 assertions / 18 migrations**, zero failures.
+- Production QA build and bundle scan: **217 source modules / 48 browser chunks**
+  passed, including the new client-side lifecycle helper.
+- Fresh disposable project `ucmarketplace-qa-14334c34b3caea66` passed the native
+  messaging gate (**36 assertions**) and progressed through provisioning, API,
+  concurrency, Realtime and local SMTP to authenticated Chromium execution.
+  Reaching the browser phase establishes completion of the earlier awaited gates;
+  no complete passing full-run summary was emitted.
+- The broader run hit its **20-minute acceptance timeout during the browser
+  phase**. The authenticated browser suite did not produce a completed report;
+  the earlier anonymous report was not presented as current authenticated evidence.
+  Browser failures/timeouts require separate investigation. The native four-case
+  Realtime pass and unit regressions are not substitutes for this unfinished gate.
+- Timeout shutdown stopped only the exact owned project. A follow-up Docker
+  check confirmed **zero running containers** for that project. Its backups and
+  ignored scratch files, including any remaining run-owned fixture records,
+  were retained for scoped diagnosis rather than broadly deleted.
+- `git diff --check` passed. No hosted publication/migration, RLS/grant change,
+  deployment, commit or push was performed.
+
+The reported Realtime delivery timeout is fixed and its four native scenarios
+pass. Full local/browser and deployed/external release acceptance remain
+**not passed**; the new blocker is the broader authenticated browser timeout.

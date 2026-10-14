@@ -1,16 +1,65 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
+import { assertDatabaseRunOwnership } from "./fixture-ownership.mjs";
+import { setFixtureProfileState } from "./fixture-state.mjs";
+
+export { assertDatabaseRunOwnership } from "./fixture-ownership.mjs";
 
 export const QA_ROLES = ["admin", "seller", "buyer", "suspended", "pending", "rejected", "competitor"];
 export const QA_IMAGE = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWNgsFjxHwAC/AHgoLvpmAAAAABJRU5ErkJggg==", "base64");
 const clientOptions = { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } };
 
+// Auth codes come from the installed SDK; Storage codes are documented at
+// https://supabase.com/docs/guides/storage/debugging/error-codes. Unknown service
+// strings are not safe diagnostics, even if they resemble short identifiers.
+const knownServiceCodes = new Set(`
+  unexpected_failure validation_failed bad_json email_exists phone_exists bad_jwt not_admin no_authorization
+  user_not_found session_not_found session_expired refresh_token_not_found refresh_token_already_used
+  flow_state_not_found flow_state_expired signup_disabled user_banned provider_email_needs_verification invite_not_found
+  bad_oauth_state bad_oauth_callback oauth_provider_not_supported unexpected_audience single_identity_not_deletable
+  email_conflict_identity_not_deletable identity_already_exists email_provider_disabled phone_provider_disabled
+  too_many_enrolled_mfa_factors mfa_factor_name_conflict mfa_factor_not_found mfa_ip_address_mismatch
+  mfa_challenge_expired mfa_verification_failed mfa_verification_rejected insufficient_aal captcha_failed
+  saml_provider_disabled manual_linking_disabled sms_send_failed email_not_confirmed phone_not_confirmed reauth_nonce_missing
+  saml_relay_state_not_found saml_relay_state_expired saml_idp_not_found saml_assertion_no_user_id saml_assertion_no_email
+  user_already_exists sso_provider_not_found saml_metadata_fetch_failed saml_idp_already_exists sso_domain_already_exists
+  saml_entity_id_mismatch conflict provider_disabled user_sso_managed reauthentication_needed same_password
+  reauthentication_not_valid otp_expired otp_disabled identity_not_found weak_password over_request_rate_limit
+  over_email_send_rate_limit over_sms_send_rate_limit bad_code_verifier anonymous_provider_disabled hook_timeout
+  hook_timeout_after_retry hook_payload_over_size_limit hook_payload_invalid_content_type request_timeout
+  mfa_phone_enroll_not_enabled mfa_phone_verify_not_enabled mfa_totp_enroll_not_enabled mfa_totp_verify_not_enabled
+  mfa_webauthn_enroll_not_enabled mfa_webauthn_verify_not_enabled mfa_verified_factor_exists invalid_credentials
+  email_address_not_authorized email_address_invalid
+  NoSuchBucket NoSuchKey NoSuchUpload InvalidJWT InvalidRequest TenantNotFound EntityTooLarge InternalError
+  ResourceAlreadyExists InvalidBucketName InvalidKey InvalidRange InvalidMimeType InvalidUploadId KeyAlreadyExists
+  BucketAlreadyExists DatabaseTimeout InvalidSignature SignatureDoesNotMatch AccessDenied ResourceLocked DatabaseError
+  MissingContentLength MissingParameter InvalidUploadSignature LockTimeout S3Error S3InvalidAccessKeyId
+  S3MaximumCredentialsLimit InvalidChecksum MissingPart SlowDown not_found already_exists unauthorized database_timeout
+  internal_server_error
+`.trim().split(/\s+/));
+const sqlstateClasses = new Set("00 01 02 03 08 09 0A 0B 0F 0L 0P 0Z 20 21 22 23 24 25 26 27 28 2B 2D 2F 34 38 39 3B 3D 3F 40 42 44 53 54 55 57 58 72 F0 HV P0 XX".split(" "));
+
+/** Primitive allowlist only: never retain SDK errors, responses, rows or causes. */
+export function qaFailureMetadata(result) {
+  const codes = [result?.error?.code, result?.error?.statusCode];
+  const qaErrorCode = codes.find((code) => typeof code === "string" && (
+    knownServiceCodes.has(code) || /^PGRST\d{3}$/.test(code)
+    || (/^[0-9A-Z]{5}$/.test(code) && sqlstateClasses.has(code.slice(0, 2)))
+  )) ?? "service_error";
+  let qaHttpStatus = null;
+  for (const value of [result?.status, result?.error?.status, result?.error?.statusCode]) {
+    const status = typeof value === "number" ? value
+      : typeof value === "string" && /^[1-5]\d{2}$/.test(value) ? Number(value) : null;
+    if (Number.isInteger(status) && status >= 100 && status <= 599) { qaHttpStatus = status; break; }
+  }
+  return { qaErrorCode, qaHttpStatus };
+}
+
 export function requireResult(result, label) {
   if (result.error) {
-    const code = result.error.code;
-    const safeCode = typeof code === "string" && /^(?:[0-9A-Z]{5}|PGRST\d{3}|[a-z_]{1,40})$/.test(code) ? code : "service_error";
-    throw new Error(`${label} failed (${safeCode}).`);
+    const metadata = qaFailureMetadata(result);
+    throw Object.assign(new Error(`${label} failed (${metadata.qaErrorCode}).`), metadata);
   }
   return result.data;
 }
@@ -22,19 +71,6 @@ export function createFixtureContext(config, pool) {
     admin: createClient(config.supabaseUrl, config.serviceRoleKey, clientOptions),
     accounts: {},
   };
-}
-
-export async function assertDatabaseRunOwnership(connection, ids, runId) {
-  assert.equal(new Set(ids).size, ids.length, "QA account identities must be distinct.");
-  const records = await connection.query(
-    "select account.id, account.raw_app_meta_data->>'qa_run_id' as qa_run_id, profile.id as profile_id from auth.users account left join public.profiles profile on profile.id=account.id where account.id=any($1::uuid[]) for update of account",
-    [ids],
-  );
-  assert.equal(records.rowCount, ids.length, "QA API and database must identify the same run-owned accounts.");
-  for (const record of records.rows) {
-    assert.ok(ids.includes(record.id) && record.profile_id === record.id, "QA database identity must have its own profile.");
-    assert.equal(record.qa_run_id, runId, "QA database refuses accounts from another run.");
-  }
 }
 
 export async function provisionAccounts(context) {
@@ -67,11 +103,11 @@ export async function provisionAccounts(context) {
     // Confirm the SQL connection points to the very same Auth/API project.
     await assertDatabaseRunOwnership(pool, [id], runId);
     if (["admin", "seller", "buyer", "competitor", "suspended"].includes(role)) {
-      requireResult(await admin.from("profiles").update({
+      await setFixtureProfileState(context, id, {
         role: role === "admin" ? "admin" : "student",
         verification_status: "verified",
         account_status: role === "suspended" ? "suspended" : "active",
-      }).eq("id", id).select("id").single(), `Set fixture state ${role}`);
+      });
     }
     requireResult(await accounts[role].client.auth.signInWithPassword({ email, password }), `Sign in ${role}`);
     if (role === "pending" || role === "rejected") {

@@ -9,7 +9,7 @@ import { runConcurrencyChecks } from "./lib/concurrency.mjs";
 import { runRealtimeChecks } from "./lib/realtime.mjs";
 import { runEmailChecks } from "./lib/email.mjs";
 import { createQaFetch, installQaInterruptHandler, launchQaProcess, QaProcessError } from "./lib/process.mjs";
-import { createAcceptanceSummary } from "./lib/acceptance-summary.mjs";
+import { createAcceptanceFailure, createAcceptanceSummary } from "./lib/acceptance-summary.mjs";
 
 const apiOnly = process.argv.includes("--api-only");
 if (process.argv.slice(2).some((argument) => argument !== "--api-only")) throw new Error("Usage: node scripts/qa/integration.mjs [--api-only]");
@@ -68,9 +68,13 @@ let pool;
 let context;
 let completedSummary;
 let completedMessage;
+let phase = "configuration";
+let acceptanceFailure;
+let cleanupFailed = false;
 try {
   const config = await readQaEnvironment({ requireDatabase: true, requireLocal: !apiOnly, requireMailpit: !apiOnly });
   if (!apiOnly) await assertQaDotenvSafety();
+  phase = "database";
   pool = new pg.Pool({ connectionString: config.databaseUrl, max: 6, connectionTimeoutMillis: 10_000,
     query_timeout: 30_000, statement_timeout: 30_000, application_name: "ucmarketplace-disposable-qa" });
   pool.on("error", () => {
@@ -82,23 +86,31 @@ try {
   if (!apiOnly) {
     await requireFreePort(config.appPort);
     const appEnvironment = getQaAppEnvironment(config);
+    phase = "build";
     console.log("Building the production application against explicit disposable QA public configuration.");
     await runNode(["node_modules/next/dist/bin/next", "build"], appEnvironment, "Production QA build");
+    phase = "server";
     server = launchQaProcess({ command: process.execPath, args: ["node_modules/next/dist/bin/next", "start", "-p", config.appPort, "-H", "127.0.0.1"], env: appEnvironment, label: "Dedicated QA application server", failOnUnhandledRuntime: true });
     await waitForApp(server, config.appBaseUrl);
   }
   context = createFixtureContext(config, pool);
+  phase = "provisioning";
   await provisionAccounts(context);
   assertRunHealthy();
+  phase = "api";
   const apiCount = await runApiChecks(context);
   assertRunHealthy();
+  phase = "concurrency";
   const concurrencyCount = await runConcurrencyChecks(context);
   assertRunHealthy();
+  phase = "realtime";
   const realtime = await runRealtimeChecks(context);
   assertRunHealthy();
+  phase = "email";
   const emailCount = apiOnly ? 0 : await runEmailChecks(context, { createSignupFixture });
   assertRunHealthy();
   if (!apiOnly) {
+    phase = "browser";
     console.log("Running isolated browser-account workflows; traces, screenshots, video, and persisted session state are disabled.");
     await runNode(["node_modules/@playwright/test/cli.js", "test", "--project=qa-chromium"], {
       ...getQaBrowserEnvironment(config), ...accountEnvironment(context.accounts),
@@ -113,8 +125,11 @@ try {
   completedSummary = createAcceptanceSummary({ apiChecks: apiCount, concurrencyScenarios: concurrencyCount, realtimeScenarios: realtime.count, emailAuthChecks: emailCount, authenticatedBrowser: !apiOnly, apiOnly });
   completedMessage = `QA completed: ${apiCount} direct API checks, ${concurrencyCount} real concurrency scenarios and ${realtime.count} Realtime scenarios${apiOnly ? "; browser and SMTP acceptance NOT run" : `; ${emailCount} local SMTP Auth checks and authenticated browser suite passed; external SMTP delivery remains separate`}.`;
 } catch (error) {
+  acceptanceFailure = createAcceptanceFailure({ phase, code: error?.qaErrorCode ?? error?.code,
+    httpStatus: error?.qaHttpStatus, assertion: error?.qaAssertionIndex,
+    processReason: error instanceof QaProcessError ? error.reason : null });
   // Never print raw service responses, connection strings, passwords or tokens.
-  const controlled = error instanceof QaProcessError || /^QA_|^Set QA_|^QA |^Full-stack QA|^Full local|^Dedicated QA|^Direct API security|^Realtime acceptance|^Email acceptance|^Local Mailpit|^Mailpit|^Remote QA|^The repository|^Browser QA|^Full browser/.test(error.message ?? "");
+  const controlled = error instanceof QaProcessError || /^QA_|^Set QA_|^QA |^Full-stack QA|^Full local|^Dedicated QA|^Direct API security|^Realtime acceptance|^Email acceptance|^Local Mailpit|^Mailpit|^Remote QA|^The repository|^Browser QA|^Full browser/.test(error?.message ?? "");
   console.error(`QA failed: ${controlled ? error.message : "Acceptance could not complete. Inspect only the disposable services and sanitized test results."}`);
   process.exitCode = 1;
 } finally {
@@ -124,16 +139,16 @@ try {
   if (server) {
     try {
       if (!interruption.signal) server.assertHealthy();
-    } catch { console.error("QA application server stopped or failed before expected shutdown."); process.exitCode = 1; }
+    } catch { console.error("QA application server stopped or failed before expected shutdown."); process.exitCode = 1; cleanupFailed = true; }
     try { await server.stop(); server.assertNoFailures(); }
-    catch { console.error("QA application shutdown failed; inspect only the server created by this invocation."); process.exitCode = 1; }
+    catch { console.error("QA application shutdown failed; inspect only the server created by this invocation."); process.exitCode = 1; cleanupFailed = true; }
   }
   if (context) {
     try { await cleanupFixtures(context); }
-    catch { console.error("QA cleanup failed. Inspect ONLY the run-owned fixture accounts before retrying; no broad deletion was attempted."); process.exitCode = 1; }
+    catch { console.error("QA cleanup failed. Inspect ONLY the run-owned fixture accounts before retrying; no broad deletion was attempted."); process.exitCode = 1; cleanupFailed = true; }
   }
   try { await pool?.end(); }
-  catch { console.error("QA database cleanup failed; no completed acceptance summary will be emitted."); process.exitCode = 1; }
+  catch { console.error("QA database cleanup failed; no completed acceptance summary will be emitted."); process.exitCode = 1; cleanupFailed = true; }
   finally {
     await interruption.settled;
     if (interruption.signal) process.exitCode = interruption.signal === "SIGINT" ? 130 : 143;
@@ -142,7 +157,9 @@ try {
   }
 }
 
-if (completedSummary && !process.exitCode) {
+if (process.exitCode) {
+  console.log(`QA_FAILURE_JSON:${JSON.stringify(createAcceptanceFailure({ ...(acceptanceFailure ?? { phase: completedSummary ? "cleanup" : phase }), cleanupFailed }))}`);
+} else if (completedSummary) {
   console.log(completedMessage);
   console.log(`QA_SUMMARY_JSON:${JSON.stringify(completedSummary)}`);
 }

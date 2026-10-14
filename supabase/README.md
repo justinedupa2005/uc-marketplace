@@ -445,7 +445,10 @@ once. Run these checks afterward:
 6. `checks/messaging_rls_smoke.sql`
 
 All named checks and smoke-test summaries must pass. Smoke tests create only
-disposable accounts/resources and remove their fixtures before committing.
+disposable accounts/resources. The messaging smoke test returns its summary
+before rolling back all fixtures; it never directly deletes Storage catalog
+rows or disables Storage's catalog-deletion protection. Other smoke tests
+remove their fixtures before committing or roll back their transaction.
 Do not substitute privileged SQL Editor reads for the authenticated-role matrix.
 
 The frontend uses reservation RPCs exclusively; direct reservation/meetup

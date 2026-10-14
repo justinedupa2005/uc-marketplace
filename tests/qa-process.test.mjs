@@ -25,6 +25,21 @@ test("QA process failure messages omit raw command output and paths", async () =
   await assert.rejects(missing.wait(), (error) => error.reason === "start" && !error.message.includes("missing-qa-executable"));
 });
 
+test("failed QA children expose structured failure metadata without their private output", async () => {
+  const payload = { version: 1, status: "failed", phase: "api", code: "42501", httpStatus: 403,
+    assertion: 12, processReason: null, cleanupFailed: false, secret: "private-token" };
+  const output = `private-SDK-output\nQA_FAILURE_JSON:${JSON.stringify(payload)}\n`;
+  const handle = worker(`process.stdout.write(${JSON.stringify(output)});process.stderr.write('private-error');process.exitCode=1`);
+  await assert.rejects(handle.wait(), (error) => error.reason === "exit");
+  const failure = handle.getAcceptanceFailure();
+  assert.equal(failure.phase, "api");
+  assert.equal(failure.assertion, 12);
+  assert.doesNotMatch(JSON.stringify(failure), /private-/);
+  const ordinary = worker("process.stdout.write('private-SDK-output');process.exitCode=1");
+  await assert.rejects(ordinary.wait());
+  assert.equal(ordinary.getAcceptanceFailure(), null);
+});
+
 test("QA timeout settles after the owned child has closed", async () => {
   const handle = worker("setInterval(()=>{},1000)");
   let closed = false;

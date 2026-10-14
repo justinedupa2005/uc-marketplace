@@ -17,6 +17,10 @@ import {
   sendMessage,
   type SendMessageState,
 } from "@/features/messages/actions";
+import {
+  createConversationRealtimeLifecycle,
+  type ConversationRealtimeState,
+} from "@/features/messages/client/realtime-lifecycle";
 import { MessageTime } from "@/features/messages/components/message-time";
 import { ParticipantAvatar } from "@/features/messages/components/participant-avatar";
 import {
@@ -128,9 +132,7 @@ export function ConversationThread({
   );
   const [body, setBody] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [realtimeState, setRealtimeState] = useState<
-    "connecting" | "connected" | "offline"
-  >("connecting");
+  const [realtimeState, setRealtimeState] = useState<ConversationRealtimeState>("connecting");
   const [sending, startSending] = useTransition();
   const [, startMarkingRead] = useTransition();
   const hasHydrated = useSyncExternalStore(
@@ -201,33 +203,9 @@ export function ConversationThread({
 
   useEffect(() => {
     let subscribed = true;
-    let channelConnected = false;
-    let catchUpInFlight = false;
-    let catchUpAttempts = 0;
-    let catchUpRetryTimer: number | null = null;
 
-    function scheduleCatchUpRetry() {
-      if (!subscribed || catchUpRetryTimer !== null) return;
-      catchUpAttempts += 1;
-      const delay = Math.min(
-        1_000 * 2 ** Math.min(catchUpAttempts - 1, 5),
-        30_000,
-      );
-      catchUpRetryTimer = window.setTimeout(() => {
-        catchUpRetryTimer = null;
-        void catchUpMessages();
-      }, delay);
-    }
-
-    async function catchUpMessages() {
-      if (catchUpInFlight) return;
-      if (catchUpRetryTimer !== null) {
-        window.clearTimeout(catchUpRetryTimer);
-        catchUpRetryTimer = null;
-      }
-      catchUpInFlight = true;
-
-      try {
+    const lifecycle = createConversationRealtimeLifecycle({
+      async load() {
         const { data, error } = await supabase
           .from("messages")
           .select("id, conversation_id, sender_id, body, created_at, read_at")
@@ -236,12 +214,7 @@ export function ConversationThread({
           .order("id", { ascending: false })
           .limit(MESSAGE_PAGE_SIZE);
 
-        if (!subscribed) return;
-        if (error) {
-          setRealtimeState("offline");
-          scheduleCatchUpRetry();
-          return;
-        }
+        if (error) throw new Error("Conversation history could not be refreshed.");
 
         const caughtUpMessages = (
           (data ?? []) as RealtimeMessageRow[]
@@ -250,25 +223,21 @@ export function ConversationThread({
           return message ? [message] : [];
         }).reverse();
 
-        setMessages((current) =>
-          mergeConversationMessages(current, caughtUpMessages),
-        );
-        catchUpAttempts = 0;
+        return caughtUpMessages;
+      },
+      apply(caughtUpMessages) {
+        setMessages((current) => mergeConversationMessages(current, caughtUpMessages));
         canMarkReadRef.current = true;
-        if (channelConnected) setRealtimeState("connected");
         requestMarkRead();
-      } catch {
-        if (subscribed) {
-          setRealtimeState("offline");
-          scheduleCatchUpRetry();
-        }
-      } finally {
-        catchUpInFlight = false;
-      }
-    }
+      },
+      onState: setRealtimeState,
+      setTimer: (callback, delay) => window.setTimeout(callback, delay),
+      clearTimer: (timer) => window.clearTimeout(timer),
+    });
 
     const channel = supabase
       .channel(`conversation:${conversationId}`)
+      .on("system", {}, (payload) => lifecycle.system(payload))
       .on(
         "postgres_changes",
         {
@@ -313,28 +282,13 @@ export function ConversationThread({
       )
       .subscribe((status) => {
         if (!subscribed) return;
-        if (status === "SUBSCRIBED") {
-          channelConnected = true;
-          setRealtimeState("connected");
-          void catchUpMessages();
-        }
-        if (
-          status === "CHANNEL_ERROR" ||
-          status === "TIMED_OUT" ||
-          status === "CLOSED"
-        ) {
-          channelConnected = false;
-          setRealtimeState("offline");
-          void catchUpMessages();
-        }
+        lifecycle.channelStatus(status);
       });
 
     return () => {
       subscribed = false;
       canMarkReadRef.current = false;
-      if (catchUpRetryTimer !== null) {
-        window.clearTimeout(catchUpRetryTimer);
-      }
+      lifecycle.dispose();
       void supabase.removeChannel(channel);
     };
   }, [conversationId, currentUserId, requestMarkRead, supabase]);

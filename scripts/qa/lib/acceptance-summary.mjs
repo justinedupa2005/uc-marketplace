@@ -33,3 +33,30 @@ export function parseAcceptanceSummary(output) {
   return createAcceptanceSummary({ ...summary,
     apiOnly: summary.mode === "api_only", authenticatedBrowser: summary.authenticatedBrowser === "passed" });
 }
+
+const failurePhases = new Set(["configuration", "database", "build", "server", "provisioning", "api", "concurrency", "realtime", "email", "browser", "cleanup"]);
+const processReasons = new Set(["start", "timeout", "output", "runtime", "stopped", "exit", "cleanup", "progress"]);
+const serviceCodes = new Set(["service_error", "unexpected_failure", "invalid_credentials", "email_not_confirmed", "weak_password", "same_password", "email_exists", "user_not_found", "not_admin", "signup_disabled", "otp_expired", "bad_jwt", "bad_json", "validation_failed", "over_email_send_rate_limit", "over_request_rate_limit"]);
+
+/** A failed child may export only phase/IDs, never its error or private output. */
+export function createAcceptanceFailure({ phase, code = "unknown", httpStatus = null, assertion = null, processReason = null, cleanupFailed = false }) {
+  if (!failurePhases.has(phase)) throw new Error("QA failure requires an allowlisted acceptance phase.");
+  return {
+    version: 1, status: "failed", phase,
+    code: typeof code === "string" && (/^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(code) || serviceCodes.has(code)) ? code : "unknown",
+    httpStatus: Number.isSafeInteger(httpStatus) && httpStatus >= 100 && httpStatus <= 599 ? httpStatus : null,
+    assertion: Number.isSafeInteger(assertion) && assertion > 0 && assertion <= 100_000 ? assertion : null,
+    processReason: processReasons.has(processReason) ? processReason : null,
+    cleanupFailed: cleanupFailed === true,
+  };
+}
+
+export function parseAcceptanceFailure(output) {
+  const lines = String(output).split(/\r?\n/).filter((line) => line.startsWith("QA_FAILURE_JSON:"));
+  if (lines.length !== 1) return null;
+  try {
+    const value = JSON.parse(lines[0].slice("QA_FAILURE_JSON:".length));
+    if (!value || Array.isArray(value) || value.version !== 1 || value.status !== "failed") return null;
+    return createAcceptanceFailure(value);
+  } catch { return null; }
+}

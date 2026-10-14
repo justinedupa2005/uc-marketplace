@@ -73,9 +73,23 @@ Only isolated test throughput limits are increased for fixture/UI sign-ins.
 CLI credentials and process diagnostics stay private and bounded. The launcher
 uses the installed native CLI binary, not an environment executable override.
 Actual database-only messaging assertions must pass before the staged Realtime
-publication is enabled on this **local disposable database only**. API, real
+publication is enabled on this **local disposable database only**. The messaging
+smoke test reads its summary before rolling back all fixtures; it never deletes
+the Storage catalog or disables native Storage deletion protection. SQL failures
+expose only SQLSTATE, statement number, assertion counts and exact allowlisted
+scenario names, not SQL text or observed rows. Later acceptance failures expose
+only the phase, bounded service code/HTTP status, numeric assertion, process
+failure reason and cleanup status. Raw child diagnostics remain withheld.
+API, real
 transaction races, Realtime, captured-email Auth flows and five authenticated
 browser tests then run. OTP expiry testing deliberately waits 62 seconds.
+
+Protected fixture profile states are seeded through the explicitly configured
+database connection, in a transaction that locks and verifies each recorded
+account's server-owned run marker before writing. This avoids assuming that a
+service key can execute every private profile-constraint function. It grants no
+new permissions, changes no RLS policies and does not replace the ordinary
+student/admin-account API checks with privileged operations.
 
 On interruption, timeout or completion, the launcher stops only its own process
 trees and uniquely named local project. It does not reset linked data, delete
@@ -230,6 +244,22 @@ events on the competitor's own control conversation and checked for healthy
 subscriptions, so an unavailable socket cannot silently pass as privacy. Catch-up
 uses an authorized persisted-message read and verifies exactly one copy, followed
 by resumed socket delivery; this is not a claim of WebSocket replay support.
+
+Before creating any delivery-test message, every subscriber must have both a
+successful channel join and a `system` acknowledgement with
+`extension: "postgres_changes"` / `status: "ok"`. The same readiness gate is
+required after reconnecting. A WebSocket `SUBSCRIBED` status, Broadcast-ready
+notification or fixed delay is not a database-listener readiness guarantee.
+Backend subscription errors fail the gate without printing their payloads.
+This closes the [documented subscribe/write timing gap](https://supabase.com/docs/guides/troubleshooting/realtime-postgres-changes-troubleshooting#step-6-writing-right-after-subscribed).
+
+The chat page also waits for both readiness signals and an authorized history
+catch-up before displaying the live-connected state. If readiness arrives while
+a history read is in flight, a follow-up read is queued so messages committed in
+the startup gap are recovered. Missing readiness becomes offline after 15 seconds;
+bounded backoff reads continue until the listener recovers. Cleanup cancels timers
+and ignores late events/results. No student/admin permission or RLS change is
+needed for this readiness handling.
 
 Code-mode SMTP acceptance performs twelve checks using messages actually
 delivered to the local capture server: normal unconfirmed signup, denied pending

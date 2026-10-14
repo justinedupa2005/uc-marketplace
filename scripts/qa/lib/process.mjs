@@ -3,6 +3,7 @@ import { existsSync, realpathSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+import { parseAcceptanceFailure } from "./acceptance-summary.mjs";
 
 export class QaProcessError extends Error {
   constructor(label, reason) {
@@ -170,7 +171,9 @@ export function launchQaProcess({
     }
   }
 
-  return { child, closed, wait, stop, assertHealthy, assertNoFailures, get unexpectedRuntimeSignals() { return runtimeSignals; } };
+  return { child, closed, wait, stop, assertHealthy, assertNoFailures,
+    getAcceptanceFailure() { return parseAcceptanceFailure(Buffer.concat(chunks).toString("utf8")); },
+    get unexpectedRuntimeSignals() { return runtimeSignals; } };
 }
 
 /** Bound HTTP sockets and combine caller cancellation with a run-owned signal. */

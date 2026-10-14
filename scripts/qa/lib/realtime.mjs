@@ -32,7 +32,15 @@ export function isValidRealtimeDenialEvidence(evidence) {
     && Number.isSafeInteger(evidence.targetParticipantDeliveries) && evidence.targetParticipantDeliveries >= 2
     && evidence.targetUnauthorizedDeliveries === 0
     && evidence.transportFailureCount === 0 && evidence.protocolFailureCount === 0
+    && evidence.postgresFailureCount === 0 && evidence.postgresReadyAfterWindow === true
     && evidence.subscribedAfterWindow === true;
+}
+
+/** A WebSocket join alone does not mean the database listener is ready. */
+export function isMessageObserverReady(observer) {
+  return !observer.closing && observer.status === "SUBSCRIBED" && observer.client.realtime.isConnected()
+    && observer.postgresChangesStatus === "ok" && observer.postgresFailures === 0
+    && observer.failures.length === 0 && observer.protocolFailures === 0;
 }
 
 async function success(request, label) {
@@ -45,7 +53,8 @@ function assertHealthy(observers, { requireSubscribed = true } = {}) {
   for (const observer of observers) {
     check(observer.failures.length === 0, `${observer.role} subscription encountered a transport failure`);
     check(observer.protocolFailures === 0, `${observer.role} received an invalid message change`);
-    if (requireSubscribed) check(observer.status === "SUBSCRIBED" && observer.client.realtime.isConnected(), `${observer.role} subscription must remain connected`);
+    check(observer.postgresFailures === 0, `${observer.role} database change subscription failed`);
+    if (requireSubscribed) check(isMessageObserverReady(observer), `${observer.role} database change subscription must remain ready and connected`);
     if (observer.forbiddenConversationId) {
       check(!observer.events.some((event) => event.row.conversation_id === observer.forbiddenConversationId), "third account received another conversation's message change");
     }
@@ -63,14 +72,25 @@ async function waitFor(predicate, label, observers, { timeoutMs = TIMEOUT_MS, re
   throw new RealtimeCheckError(`Realtime acceptance failed: ${label} timed out.`);
 }
 
-function observe(client, role, runId, conversationIds, forbiddenConversationId = null) {
-  const observer = { client, role, events: [], failures: [], protocolFailures: 0, status: null, subscribedAt: null, closing: false, forbiddenConversationId };
+export function createMessageObserver(client, role, runId, conversationIds, forbiddenConversationId = null) {
+  const observer = { client, role, events: [], failures: [], protocolFailures: 0, postgresChangesStatus: null, postgresFailures: 0, status: null, subscribedAt: null, closing: false, forbiddenConversationId };
   const channel = client.channel(`qa-${runId}-${role}-${randomUUID()}`);
   observer.channel = channel;
+  // The service reports CDC readiness separately from the WebSocket join.
+  // Never retain its free-text message, channel/topic or other private fields.
+  channel.on("system", {}, (payload) => {
+    if (observer.closing || payload?.extension !== "postgres_changes") return;
+    if (payload.status === "ok") observer.postgresChangesStatus = "ok";
+    else {
+      observer.postgresChangesStatus = "error";
+      observer.postgresFailures += 1;
+    }
+  });
   // Explicit INSERT/UPDATE bindings avoid DELETE's different RLS semantics.
   for (const conversationId of conversationIds) {
     for (const eventType of ["INSERT", "UPDATE"]) {
       channel.on("postgres_changes", { event: eventType, schema: "public", table: "messages", filter: `conversation_id=eq.${conversationId}` }, (payload) => {
+        if (observer.closing) return;
         const row = payload.new;
         if (payload.schema !== "public" || payload.table !== "messages" || payload.eventType !== eventType
           || !row || !uuid.test(row.id) || row.conversation_id !== conversationId || !uuid.test(row.sender_id)
@@ -86,7 +106,10 @@ function observe(client, role, runId, conversationIds, forbiddenConversationId =
   channel.subscribe((status) => {
     observer.status = status;
     if (status === "SUBSCRIBED") observer.subscribedAt ??= performance.now();
-    else if (!observer.closing) observer.failures.push(status);
+    else {
+      observer.postgresChangesStatus = null;
+      if (!observer.closing) observer.failures.push(status);
+    }
     // Raw SDK errors may contain URLs, JWTs, or private server responses.
   }, TIMEOUT_MS);
   return observer;
@@ -179,13 +202,13 @@ async function runChecks(context, clients, observers) {
   check(conversation.buyer_id === accounts.buyer.id && conversation.seller_id === accounts.seller.id && conversation.listing_id === listingId, "target conversation must have exactly the seller and buyer fixtures");
   check(isInvisibleDataResult(await clients.competitor.from("messages").select("id,body").eq("conversation_id", conversationId)), "third account cannot read target message history");
 
-  const seller = observe(clients.seller, "seller", runId, [conversationId]);
-  const buyer = observe(clients.buyer, "buyer", runId, [conversationId]);
+  const seller = createMessageObserver(clients.seller, "seller", runId, [conversationId]);
+  const buyer = createMessageObserver(clients.buyer, "buyer", runId, [conversationId]);
   // Both bindings share the same third-account channel and WebSocket. A live
   // control subscription prevents an outage from masquerading as RLS denial.
-  const competitor = observe(clients.competitor, "competitor", runId, [conversationId, controlId], conversationId);
+  const competitor = createMessageObserver(clients.competitor, "competitor", runId, [conversationId, controlId], conversationId);
   observers.push(seller, buyer, competitor);
-  await waitFor(() => observers.every((observer) => observer.status === "SUBSCRIBED" && observer.client.realtime.isConnected()), "three authenticated subscriptions", observers, { requireSubscribed: false });
+  await waitFor(() => observers.every(isMessageObserverReady), "three authenticated database change subscriptions", observers, { requireSubscribed: false });
 
   const controlBefore = await send(clients.seller, accounts.seller.id, controlId, "control-before", runId);
   const beforeDelivery = await delivery(competitor, controlBefore, "INSERT", observers);
@@ -209,6 +232,7 @@ async function runChecks(context, clients, observers) {
     targetParticipantDeliveries: [seller, buyer].reduce((total, observer) => total + observer.events.length, 0),
     targetUnauthorizedDeliveries: competitor.events.filter((event) => event.row.conversation_id === conversationId).length,
     transportFailureCount: competitor.failures.length, protocolFailureCount: competitor.protocolFailures,
+    postgresFailureCount: competitor.postgresFailures, postgresReadyAfterWindow: competitor.postgresChangesStatus === "ok",
     subscribedAfterWindow: competitor.status === "SUBSCRIBED" && clients.competitor.realtime.isConnected(),
   };
   check(isValidRealtimeDenialEvidence(denialEvidence), "third-account denial needs healthy positive controls and the full receive window");
@@ -231,10 +255,10 @@ async function runChecks(context, clients, observers) {
   check(!clients.buyer.realtime.isConnected() && clients.buyer.realtime.connectionState() === "closed"
     && !buyer.events.some((event) => event.row.id === missed.id), "missed message must be persisted while buyer realtime is disconnected");
   const offlineEndedAt = performance.now();
-  const reconnected = observe(clients.buyer, "buyer-reconnected", runId, [conversationId]);
+  const reconnected = createMessageObserver(clients.buyer, "buyer-reconnected", runId, [conversationId]);
   observers.push(reconnected);
   const resumedObservers = [seller, competitor, reconnected];
-  await waitFor(() => reconnected.status === "SUBSCRIBED" && clients.buyer.realtime.isConnected(), "buyer reconnect subscription", resumedObservers, { requireSubscribed: false });
+  await waitFor(() => isMessageObserverReady(reconnected), "buyer reconnect database change subscription", resumedObservers, { requireSubscribed: false });
   assertHealthy(resumedObservers);
   const history = await success(clients.buyer.from("messages").select("id,conversation_id,sender_id,body,created_at,read_at").eq("conversation_id", conversationId).order("created_at", { ascending: true }).order("id", { ascending: true }), "authorized reconnect history catch-up");
   check(history.length === 3 && new Set(history.map((row) => row.id)).size === history.length

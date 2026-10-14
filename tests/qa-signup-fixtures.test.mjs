@@ -154,7 +154,13 @@ test("obfuscated duplicates, mismatched identities, and prior run markers never 
 
 test("an obfuscated duplicate signup ID cannot resolve through Admin or cause tagging/deletion", async () => {
   const { context, calls } = installFixture({ signupUser: { id: otherId }, inspectionError: { code: "user_not_found", status: 404, message: "private identity diagnostic" } });
-  await assert.rejects(createSignupFixture(context), /^Error: SMTP signup identity inspection failed \(user_not_found\)\.$/);
+  await assert.rejects(createSignupFixture(context), (error) => {
+    assert.equal(error.message, "SMTP signup identity inspection failed (user_not_found).");
+    assert.equal(error.qaErrorCode, "user_not_found");
+    assert.equal(error.qaHttpStatus, 404);
+    assert.deepEqual(Object.keys(error), ["qaErrorCode", "qaHttpStatus"]);
+    return true;
+  });
   assert.equal(context.accounts.emailSignup.id, otherId);
   assert.deepEqual(calls.filter((call) => call.operation === "getUserById"), [{ operation: "getUserById", id: otherId }]);
   assert.equal(calls.some((call) => ["updateUserById", "pool.query", "deleteUser"].includes(call.operation)), false);
