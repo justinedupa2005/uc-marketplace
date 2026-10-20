@@ -3,8 +3,8 @@ import { expect, test, type Page } from "@playwright/test";
 import { isExpectedStorageDenial, isInvisibleDataResult, isSuccessfulApiResult } from "../../scripts/qa/lib/api-results.mjs";
 
 import {
-  closeQaSessions, confirmAction, expectDialogWithinViewport, expectNoHorizontalOverflow, holdQaMutation, loginQaSession,
-  moderate, openQaSession, qaEnvironment, qaImage, qaRoles, type QaSession,
+  closeQaSessions, confirmAction, contentAlerts, expectDialogWithinViewport, expectNoHorizontalOverflow, holdQaMutation, loginQaSession,
+  moderate, openQaSession, qaEnvironment, qaImage, qaRoles, tabToModalControl, type QaSession,
 } from "./qa-helpers";
 
 const adminRoutes = ["/admin", "/admin/users", "/admin/listings", "/admin/reports", "/admin/verifications"];
@@ -28,7 +28,7 @@ test("separate real sessions enforce admin, verification, suspension, and logout
         if (account.role === "ADMIN") {
           await expect(page).toHaveURL(new RegExp(`${route}(?:\\?|$)`));
           await expect(page.locator("h1")).toBeVisible();
-          await expect(page.getByRole("alert")).toHaveCount(0);
+          await expect(contentAlerts(page)).toHaveCount(0);
         } else {
           await expect(page).not.toHaveURL(/\/admin(?:\/|\?|$)/);
           await expect(page.getByRole("heading", { name: "Account details" })).toHaveCount(0);
@@ -101,8 +101,8 @@ test("real authenticated mutations recover from offline networks, suppress dupli
     await test.step("delayed publication disables controls and creates one listing despite repeated Enter", async () => {
       await seller.page.goto("/sell");
       await seller.page.getByLabel("Product Title").fill(title);
-      await seller.page.getByLabel("Description", { exact: true }).fill(`Synthetic network recovery fixture ${runId}. No real sale or exchange.`);
-      const category = seller.page.getByLabel("Category", { exact: true });
+      await seller.page.getByRole("textbox", { name: "Description", exact: true }).fill(`Synthetic network recovery fixture ${runId}. No real sale or exchange.`);
+      const category = seller.page.getByRole("combobox", { name: "Category", exact: true });
       const categoryValue = await category.locator("option").evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value).find(Boolean));
       expect(categoryValue, "QA database must have an active marketplace category").toBeTruthy();
       await category.selectOption(categoryValue!);
@@ -138,7 +138,7 @@ test("real authenticated mutations recover from offline networks, suppress dupli
       try {
         expect(await buyer.page.evaluate(() => navigator.onLine), "The browser context must actually be offline").toBe(false);
         await save.press("Space");
-        await expect(buyer.page.getByRole("alert")).toHaveText("Unable to save this listing. Please try again.");
+        await expect(contentAlerts(buyer.page)).toHaveText("Unable to save this listing. Please try again.");
         await expect(save).toBeEnabled();
         await expect(save).toHaveAttribute("aria-pressed", "false");
         const failedSave = await buyer.api.from("favorites").select("listing_id").eq("listing_id", listingId).eq("user_id", buyer.account.id);
@@ -180,15 +180,8 @@ test("real authenticated mutations recover from offline networks, suppress dupli
           const last = dialog.getByRole("button", { name: contract.submit, exact: true });
           await expect(last).toBeEnabled();
           await last.focus();
-          await last.press("Tab");
-          // Chromium's native modal traversal may use body as a neutral tab
-          // stop before wrapping. Background interactive controls are never
-          // accepted as a valid intermediate or final focus destination.
-          if (await buyer.page.evaluate(() => document.activeElement === document.body)) await buyer.page.keyboard.press("Tab");
-          await expect(first).toBeFocused();
-          await first.press("Shift+Tab");
-          if (await buyer.page.evaluate(() => document.activeElement === document.body)) await buyer.page.keyboard.press("Shift+Tab");
-          await expect(last).toBeFocused();
+          await tabToModalControl(buyer.page, dialog, first, "Tab");
+          await tabToModalControl(buyer.page, dialog, last, "Shift+Tab");
           await buyer.page.keyboard.press("Escape");
           await expect(dialog).not.toBeVisible();
           await expect(trigger).toBeFocused();
@@ -230,9 +223,12 @@ test("real authenticated mutations recover from offline networks, suppress dupli
         await expect(buyer.page.getByRole("log").getByText(body, { exact: true })).toHaveCount(1);
         await expect(composer).toBeEnabled();
         await expect(composer).toHaveValue("");
-        const messages = await buyer.api.from("messages").select("id,body").eq("conversation_id", conversationId).eq("sender_id", buyer.account.id).eq("body", body);
+        const messages = await buyer.api.from("messages").select("id,body").eq("conversation_id", conversationId).eq("sender_id", buyer.account.id);
         expect(isSuccessfulApiResult(messages)).toBe(true);
         expect(messages.data).toHaveLength(1);
+        // HTML multipart text uses CRLF on the wire; compare the exact message
+        // text with normalized line endings, without filtering away stored rows.
+        expect(messages.data![0].body.replace(/\r\n/g, "\n")).toBe(body);
         expect(delayed.requestCount, "Repeated Enter while pending must send only one message request").toBe(1);
       } finally {
         await delayed.dispose();
@@ -344,8 +340,8 @@ test("isolated verification, buyer/seller transaction, persistence, privacy, and
       await expect(seller.page.locator("#listing-title-error")).not.toBeEmpty();
       await expect(seller.page.locator("#listing-images-error")).not.toBeEmpty();
       await seller.page.getByLabel("Product Title").fill(title);
-      await seller.page.getByLabel("Description", { exact: true }).fill(`A working synthetic test calculator. ${descriptionWord}. Not a real sale.`);
-      const category = seller.page.getByLabel("Category", { exact: true });
+      await seller.page.getByRole("textbox", { name: "Description", exact: true }).fill(`A working synthetic test calculator. ${descriptionWord}. Not a real sale.`);
+      const category = seller.page.getByRole("combobox", { name: "Category", exact: true });
       const categoryValue = await category.locator("option").evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value).find(Boolean));
       expect(categoryValue, "QA database must have an active marketplace category").toBeTruthy();
       await category.selectOption(categoryValue!);
@@ -364,7 +360,7 @@ test("isolated verification, buyer/seller transaction, persistence, privacy, and
       expect(images.data).toHaveLength(1);
       await seller.page.getByRole("link", { name: "Edit", exact: true }).click();
       await expect(seller.page.getByLabel("Title", { exact: true })).toHaveValue(title);
-      await seller.page.getByLabel("Description", { exact: true }).fill(`Edited synthetic calculator. ${descriptionWord}. Not a real sale.`);
+      await seller.page.getByRole("textbox", { name: "Description", exact: true }).fill(`Edited synthetic calculator. ${descriptionWord}. Not a real sale.`);
       await seller.page.getByRole("button", { name: "Save Changes", exact: true }).click();
       await expect(seller.page).toHaveURL(new RegExp(`/listing/${listingId}(?:\\?|$)`));
       await seller.page.reload();
@@ -375,13 +371,26 @@ test("isolated verification, buyer/seller transaction, persistence, privacy, and
       await buyer.page.goto("/marketplace");
       await buyer.page.getByRole("searchbox", { name: "Search listings" }).fill(descriptionWord.toUpperCase());
       await buyer.page.getByRole("button", { name: "Search listings", exact: true }).click();
+      await expect(buyer.page).toHaveURL((url) => url.searchParams.get("search") === descriptionWord.toUpperCase());
       await expect(buyer.page.getByRole("link", { name: title, exact: true })).toBeVisible();
       await buyer.page.getByLabel("Condition", { exact: true }).selectOption("good");
       await buyer.page.getByLabel("Minimum price").fill("500");
       await buyer.page.getByLabel("Maximum price").fill("700");
       await buyer.page.getByRole("button", { name: "Apply Filters", exact: true }).click();
+      await expect(buyer.page).toHaveURL((url) => url.searchParams.get("condition") === "good"
+        && url.searchParams.get("minPrice") === "500" && url.searchParams.get("maxPrice") === "700"
+        && url.searchParams.get("search") === descriptionWord.toUpperCase());
       await buyer.page.locator("summary[aria-label^='Sort listings']").click();
-      await buyer.page.getByRole("link", { name: "Lowest Price", exact: true }).click();
+      const lowestPrice = buyer.page.getByRole("link", { name: "Lowest Price", exact: true });
+      const sortHref = new URL((await lowestPrice.getAttribute("href"))!, qaEnvironment().appURL);
+      expect(sortHref.searchParams.get("condition")).toBe("good");
+      expect(sortHref.searchParams.get("minPrice")).toBe("500");
+      expect(sortHref.searchParams.get("maxPrice")).toBe("700");
+      expect(sortHref.searchParams.get("search")).toBe(descriptionWord.toUpperCase());
+      await lowestPrice.click();
+      await expect(buyer.page).toHaveURL((url) => url.searchParams.get("sort") === "price-asc"
+        && url.searchParams.get("condition") === "good" && url.searchParams.get("minPrice") === "500"
+        && url.searchParams.get("maxPrice") === "700" && url.searchParams.get("search") === descriptionWord.toUpperCase());
       const filteredURL = buyer.page.url();
       await buyer.page.reload();
       await expect(buyer.page.getByLabel("Condition", { exact: true })).toHaveValue("good");
@@ -419,8 +428,9 @@ test("isolated verification, buyer/seller transaction, persistence, privacy, and
       await expect(listingReport).not.toBeVisible();
       await buyer.page.getByRole("button", { name: "Report Student", exact: true }).click();
       const studentReport = buyer.page.getByRole("dialog", { name: "Report student", exact: true });
+      const studentReportDetails = `QA ${runId}: Separate synthetic student report.`;
       await studentReport.getByLabel("Reason", { exact: true }).selectOption("other");
-      await studentReport.getByLabel(/Additional details/).fill(`QA ${runId}: Separate synthetic student report.`);
+      await studentReport.getByLabel(/Additional details/).fill(studentReportDetails);
       await studentReport.getByRole("button", { name: "Submit Report", exact: true }).click();
       await expect(studentReport).not.toBeVisible();
       const reports = await admin.api.from("listing_reports").select("id,status").eq("listing_id", listingId).eq("reporter_id", buyer.account.id).single();
@@ -429,7 +439,12 @@ test("isolated verification, buyer/seller transaction, persistence, privacy, and
       expect(isInvisibleDataResult(privateReports), "Reports must be hidden from the subject by permissions, not a transport error").toBe(true);
       await admin.page.goto(`/admin/reports/listing/${reports.data!.id}`);
       await moderate(admin.page, "Resolve report", /Resolve this report/, "Private resolution note", `QA ${runId}: Isolated report reviewed and resolved.`);
-      const userReport = await admin.api.from("student_reports").select("id,status").eq("subject_id", seller.account.id).eq("reporter_id", buyer.account.id).single();
+      // Earlier API acceptance intentionally retains a dismissed report for this
+      // same participant pair. Inspect this UI submission, not its audit history.
+      const userReport = await admin.api.from("student_reports").select("id,status,details,reason")
+        .eq("subject_id", seller.account.id).eq("reporter_id", buyer.account.id)
+        .eq("details", studentReportDetails).eq("reason", "other").single();
+      expect(isSuccessfulApiResult(userReport), "The exact UI report must be readable without a cardinality or transport error").toBe(true);
       expect(userReport.data?.status).toBe("pending");
       await admin.page.goto(`/admin/reports/student/${userReport.data!.id}`);
       await moderate(admin.page, "Dismiss report", /Dismiss this report/, "Private dismissal note", `QA ${runId}: Isolated student report dismissed.`);
@@ -479,6 +494,7 @@ test("isolated verification, buyer/seller transaction, persistence, privacy, and
       await expect(buyer.page.getByText("Reservation request pending", { exact: true })).toBeVisible();
       await buyer.page.reload();
       await buyer.page.getByRole("link", { name: "View Reservation", exact: true }).click();
+      await expect(buyer.page).toHaveURL(/\/reservations\/[0-9a-f-]{36}$/);
       reservationId = new URL(buyer.page.url()).pathname.split("/")[2];
       const request = await buyer.api.from("reservations").select("id,buyer_id,seller_id,status").eq("id", reservationId).single();
       expect(request.data).toMatchObject({ buyer_id: buyer.account.id, seller_id: seller.account.id, status: "pending" });
@@ -563,7 +579,10 @@ test("isolated verification, buyer/seller transaction, persistence, privacy, and
       await expect(seller.page.getByText("Profile updated successfully.", { exact: true })).toBeVisible();
       await seller.page.reload();
       await expect(seller.page.getByLabel("Year level", { exact: true })).toHaveValue(nextYear);
-      await seller.page.getByLabel("Choose profile photo").setInputFiles(qaImage);
+      const avatarFile = seller.page.getByLabel("Choose profile photo");
+      await expect(avatarFile).toBeEnabled();
+      await avatarFile.setInputFiles(qaImage);
+      await expect(seller.page.getByText("New photo preview", { exact: true })).toBeVisible();
       await seller.page.getByRole("button", { name: /^(Save Photo|Replace Photo)$/ }).click();
       await expect(seller.page.getByRole("button", { name: "Remove Profile Photo", exact: true })).toBeVisible();
       await seller.page.reload();
@@ -672,3 +691,93 @@ async function submitVerification(page: Page) {
   await page.getByRole("button", { name: "Submit for verification", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Verification pending" })).toBeVisible();
 }
+
+test("marketplace filters remain visible on desktop and keyboard-disclosable on mobile without duplicate forms", async ({ browser }) => {
+  const session = await openQaSession(browser, "BUYER");
+  const { page } = session;
+  try {
+    // Read actual server markup without scripts. Next may keep streamed content
+    // in a hidden boundary until scripts reveal it, so inspect readiness here;
+    // visible desktop/mobile behavior is checked in the hydrated browser below.
+    const staticContext = await browser.newContext({
+      baseURL: qaEnvironment().appURL, javaScriptEnabled: false, viewport: { width: 375, height: 900 },
+    });
+    try {
+      await staticContext.addCookies(await session.context.cookies());
+      const staticPage = await staticContext.newPage();
+      await staticPage.goto("/marketplace");
+      const staticToggle = staticPage.locator("button[aria-controls][aria-expanded]").filter({ hasText: /^Filters/ });
+      await expect(staticToggle).toHaveCount(1);
+      await expect(staticToggle).toBeDisabled();
+      await expect(staticToggle).toHaveAttribute("aria-expanded", "false");
+      await expect(staticPage.locator("#marketplace-condition")).not.toBeVisible();
+    } finally {
+      await staticContext.close();
+    }
+    for (const width of [375, 390, 430, 1280, 1440, 1920]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/marketplace");
+      const form = page.getByRole("form", { name: "Marketplace filters", exact: true, includeHidden: true });
+      const condition = page.locator("#marketplace-condition");
+      const minimum = page.locator("#marketplace-min-price");
+      const maximum = page.locator("#marketplace-max-price");
+      const toggle = page.locator("button[aria-controls][aria-expanded]").filter({ hasText: /^Filters/ });
+      await expect(form).toHaveCount(1);
+      if (width >= 768) {
+        await expect(toggle).not.toBeVisible();
+        for (const control of [condition, minimum, maximum]) await expect(control).toBeVisible();
+      } else {
+        await expect(toggle).toBeVisible();
+        await expect(toggle).toBeEnabled();
+        await expect(toggle).toHaveAttribute("aria-expanded", "false");
+        await expect(condition).not.toBeVisible();
+        await toggle.focus();
+        await toggle.press("Enter");
+        await expect(toggle).toHaveAttribute("aria-expanded", "true");
+        for (const control of [condition, minimum, maximum]) await expect(control).toBeVisible();
+        const panelId = await toggle.getAttribute("aria-controls");
+        expect(panelId).toBeTruthy();
+        await expect(page.locator(`[id="${panelId}"]`)).toContainText("Apply Filters");
+        await toggle.press("Space");
+        await expect(toggle).toHaveAttribute("aria-expanded", "false");
+        await expect(condition).not.toBeVisible();
+      }
+      await expectNoHorizontalOverflow(page);
+    }
+
+    // One hydrated form survives breakpoint changes; CSS desktop visibility
+    // must not depend on the remembered mobile disclosure state.
+    await page.setViewportSize({ width: 375, height: 900 });
+    await page.goto("/marketplace");
+    const form = page.getByRole("form", { name: "Marketplace filters", exact: true, includeHidden: true });
+    const condition = page.locator("#marketplace-condition");
+    const toggle = page.locator("button[aria-controls][aria-expanded]").filter({ hasText: /^Filters/ });
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toBeEnabled();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(condition).not.toBeVisible();
+    await toggle.focus();
+    await expect(toggle).toBeFocused();
+    await toggle.press("Enter");
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(condition).toBeVisible();
+    await condition.selectOption("good");
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(form).toHaveCount(1);
+    await expect(condition).toBeVisible();
+    await expect(condition).toHaveValue("good");
+    await expect(toggle).not.toBeVisible();
+    await page.setViewportSize({ width: 390, height: 900 });
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(condition).toBeVisible();
+    await toggle.press("Space");
+    await expect(condition).not.toBeVisible();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(condition).toBeVisible();
+    await expect(condition).toHaveValue("good");
+    await expect(form).toHaveCount(1);
+    expect(session.errors).toEqual([]);
+  } finally {
+    await closeQaSessions([session]);
+  }
+});

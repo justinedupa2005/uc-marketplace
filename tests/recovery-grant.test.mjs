@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHmac, randomBytes } from "node:crypto";
 import { registerHooks } from "node:module";
 import test from "node:test";
+import { NextRequest, NextResponse } from "next/server.js";
 
 const fixtureKey = Symbol.for("uc-marketplace.recovery-grant.fixture");
 const mockUrl = (code) => `data:text/javascript,${encodeURIComponent(code)}`;
@@ -10,10 +11,10 @@ registerHooks({
     const mocks = {
       "server-only": "export {};",
       "next/headers": `export async function cookies() { return globalThis[Symbol.for("uc-marketplace.recovery-grant.fixture")].cookies; }`,
-      "next/server": `export const NextResponse = { redirect(url) { return new Response(null, { status: 307, headers: { Location: String(url) } }); } };`,
       "@/lib/supabase/server": `export async function createClient() { return globalThis[Symbol.for("uc-marketplace.recovery-grant.fixture")].supabase; }`,
     };
     if (specifier in mocks) return { url: mockUrl(mocks[specifier]), shortCircuit: true };
+    if (specifier === "next/server") return nextResolve("next/server.js", context);
     if (specifier.startsWith("@/")) return nextResolve(new URL(`../src/${specifier.slice(2)}.ts`, import.meta.url).href, context);
     return nextResolve(specifier, context);
   },
@@ -22,6 +23,7 @@ registerHooks({
 const grants = await import("../src/lib/auth/recovery-grant.ts");
 const guards = await import("../src/lib/auth/server.ts");
 const { GET } = await import("../src/app/auth/recovery/route.ts");
+const { GET: confirmEmail } = await import("../src/app/auth/confirm/route.ts");
 const userId = "11111111-1111-4111-8111-111111111111";
 const sessionId = "22222222-2222-4222-8222-222222222222";
 const otherId = "33333333-3333-4333-8333-333333333333";
@@ -111,7 +113,7 @@ test("direct OTP callback provenance permits OTP claims while PKCE still strictl
   assert.equal(guards.hasRecoveryAuthenticationMethod(claims("recovery")), true);
 });
 
-function installFixture({ marker, method = "otp", authError = null, claimPatch = {}, liveUserId = userId, exchangeUserId = userId, exchangeError = null, exchangeThrows = false } = {}) {
+function installFixture({ marker, method = "otp", authError = null, claimPatch = {}, liveUserId = userId, exchangeUserId = userId, exchangeError = null, exchangeThrows = false, signOutError = null } = {}) {
   const calls = [];
   const values = new Map(marker ? [[guards.RECOVERY_COOKIE_NAME, marker]] : []);
   const fixture = {
@@ -126,7 +128,7 @@ function installFixture({ marker, method = "otp", authError = null, claimPatch =
       async exchangeCodeForSession(code, options) { calls.push(["exchangeCodeForSession", code, options]); return { data: { user: { id: exchangeUserId }, session: {} }, error: exchangeError }; },
       async getClaims() { calls.push(["getClaims"]); return { data: { claims: claims(method, claimPatch) }, error: authError }; },
       async getUser() { calls.push(["getUser"]); return { data: { user: liveUserId ? { id: liveUserId } : null }, error: authError }; },
-      async signOut(parameters) { calls.push(["signOut", parameters]); return { error: null }; },
+      async signOut(parameters) { calls.push(["signOut", parameters]); return { error: signOutError }; },
     } },
   };
   globalThis[fixtureKey] = fixture;
@@ -144,9 +146,8 @@ async function withSecret(value, operation) {
   }
 }
 
-function request(query) {
-  const url = new URL(`http://127.0.0.1:3106/auth/recovery?${query}`);
-  return { nextUrl: { searchParams: url.searchParams, clone: () => new URL(url) } };
+function request(query, origin = "http://127.0.0.1:3106", pathname = "/auth/recovery") {
+  return new NextRequest(`${origin}${pathname}?${query}`);
 }
 
 test("real marker guard accepts signed OTP only for its matching live session", async () => {
@@ -181,7 +182,7 @@ test("actual direct recovery route signs a grant only after typed OTP verificati
   await withSecret(secret, async () => {
     const fixture = installFixture();
     const response = await GET(request(`token_hash=${"a".repeat(64)}&type=recovery`));
-    assert.equal(response.headers.get("location"), "http://127.0.0.1:3106/reset-password");
+    assert.equal(response.headers.get("location"), "/reset-password");
     assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
     const marker = fixture.values.get(guards.RECOVERY_COOKIE_NAME);
     assert.equal(grants.verifyRecoveryGrant(marker, userId, sessionId, { secret }), true);
@@ -200,7 +201,7 @@ test("both recovery routes refuse missing/short secret before consuming a token 
     for (const query of [`token_hash=${"a".repeat(64)}&type=recovery`, "code=pkce-code"]) {
       const fixture = installFixture();
       const response = await GET(request(query));
-      assert.equal(response.headers.get("location"), "http://127.0.0.1:3106/reset-password?error=invalid");
+      assert.equal(response.headers.get("location"), "/reset-password?error=invalid");
       assert.equal(fixture.calls.some(([name]) => ["verifyOtp", "exchangeCodeForSession", "set"].includes(name)), false);
     }
   });
@@ -244,11 +245,82 @@ test("PKCE route issues signed grants and keeps its strict recovery AMR requirem
   await withSecret(secret, async () => {
     const fixture = installFixture({ method: "recovery" });
     const response = await GET(request("code=pkce-code&sb_flow_id=flow-123"));
-    assert.equal(response.headers.get("location"), "http://127.0.0.1:3106/reset-password");
+    assert.equal(response.headers.get("location"), "/reset-password");
     assert.equal(grants.verifyRecoveryGrant(fixture.values.get(guards.RECOVERY_COOKIE_NAME), userId, sessionId, { secret }), true);
     assert.deepEqual(fixture.calls[0], ["exchangeCodeForSession", "pkce-code", { flowId: "flow-123" }]);
     const ordinaryOtp = installFixture({ method: "otp" });
     assert.match((await GET(request("code=pkce-code"))).headers.get("location"), /error=invalid$/);
     assert.equal(ordinaryOtp.calls.some(([name]) => name === "set"), false);
   });
+});
+
+test("installed NextRequest loopback normalization cannot move a successful recovery callback's browser origin", async () => {
+  await withSecret(secret, async () => {
+    const browserOrigin = "http://127.0.0.1:3106";
+    const fixture = installFixture();
+    const callback = request(`token_hash=${"a".repeat(64)}&type=recovery`, browserOrigin);
+    assert.equal(callback.nextUrl.hostname, "localhost", "The installed NextURL normalizes the request host before route code runs");
+    const response = await GET(callback);
+    assert.equal(response instanceof NextResponse, true);
+    assert.equal(response.status, 307);
+    assert.equal(response.headers.get("location"), "/reset-password");
+    assert.equal(new URL(response.headers.get("location"), browserOrigin).origin, browserOrigin);
+    assert.equal(grants.verifyRecoveryGrant(fixture.values.get(guards.RECOVERY_COOKIE_NAME), userId, sessionId, { secret }), true);
+  });
+});
+
+test("recovery redirect destinations are fixed relative paths across origins and ignore callback redirect hints", async () => {
+  await withSecret(secret, async () => {
+    for (const origin of ["http://127.0.0.1:3106", "http://localhost:3106", "http://[::1]:3106", "https://marketplace.example.test"]) {
+      for (const [patch, expected] of [[{}, "/reset-password"], [{ exchangeError: { code: "otp_expired" } }, "/reset-password?error=invalid"]]) {
+        installFixture(patch);
+        const callback = request(`token_hash=${"a".repeat(64)}&type=recovery&next=https%3A%2F%2Fattacker.invalid%2Fprivate&redirect_to=%2F%2Fattacker.invalid`, origin);
+        callback.headers.set("x-forwarded-host", "attacker.invalid");
+        callback.headers.set("host", "attacker.invalid");
+        const response = await GET(callback);
+        assert.equal(response.status, 307);
+        assert.equal(response.headers.get("location"), expected);
+        assert.equal(new URL(response.headers.get("location"), origin).origin, origin);
+        assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
+        assert.doesNotMatch(response.headers.get("location"), /attacker|token_hash|redirect_to/);
+      }
+    }
+  });
+});
+
+test("confirmation success keeps the browser origin and signs out the temporary email session", async () => {
+  for (const origin of ["http://127.0.0.1:3106", "http://localhost:3106", "http://[::1]:3106", "https://marketplace.example.test"]) {
+    for (const query of [`token_hash=${"a".repeat(64)}&type=email`, `token_hash=${"a".repeat(64)}&type=signup`, "code=pkce-code"]) {
+      const fixture = installFixture();
+      const callback = request(`${query}&next=https%3A%2F%2Fattacker.invalid%2Fprivate`, origin, "/auth/confirm");
+      callback.headers.set("x-forwarded-host", "attacker.invalid");
+      const response = await confirmEmail(callback);
+      assert.equal(response instanceof NextResponse, true);
+      assert.equal(response.status, 307);
+      assert.equal(response.headers.get("location"), "/login?confirmation=success");
+      assert.equal(new URL(response.headers.get("location"), origin).origin, origin);
+      assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
+      assert.equal(fixture.calls.filter(([name]) => name === "signOut").length, 1);
+      assert.deepEqual(fixture.calls.find(([name]) => name === "signOut"), ["signOut", { scope: "local" }]);
+      assert.equal(fixture.calls.some(([name]) => name === "set"), false);
+    }
+  }
+});
+
+test("confirmation errors, recovery claims and signout failure retain a fixed same-origin failure destination", async () => {
+  for (const patch of [
+    { exchangeError: { code: "otp_expired" } }, { exchangeThrows: true }, { authError: { code: "unexpected_failure" } },
+    { method: "recovery" }, { claimPatch: { sub: null } }, { signOutError: { code: "unexpected_failure" } },
+  ]) {
+    const fixture = installFixture(patch);
+    const response = await confirmEmail(request(`token_hash=${"a".repeat(64)}&type=email`, "http://127.0.0.1:3106", "/auth/confirm"));
+    assert.equal(response.status, 307);
+    assert.equal(response.headers.get("location"), "/login?confirmation=failed");
+    assert.equal(response.headers.get("cache-control"), "private, no-store, max-age=0");
+    assert.equal(fixture.calls.some(([name]) => name === "set"), false);
+  }
+  const fixture = installFixture();
+  const response = await confirmEmail(request(`token_hash=${"a".repeat(64)}&type=recovery`, "http://127.0.0.1:3106", "/auth/confirm"));
+  assert.equal(response.headers.get("location"), "/login?confirmation=failed");
+  assert.equal(fixture.calls.some(([name]) => ["verifyOtp", "exchangeCodeForSession", "getClaims", "set"].includes(name)), false);
 });

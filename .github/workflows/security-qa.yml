@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   local-security:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       # Deliberately inert public configuration. This job never uses hosted
@@ -34,16 +34,31 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Record the exact tested commit
+        run: git rev-parse HEAD
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: "22"
           cache: npm
-      - run: npm ci
-      - run: npm run check
-      - run: npm run test:db
-      - run: npm run audit:production
-      - run: npm run build
-      - run: npm run qa:security:bundles
+      - name: Scan repository and Git history without displaying secrets
+        run: npm run qa:secrets -- --history
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Generate route types and check TypeScript
+        run: npm run typecheck
+      - name: ESLint
+        run: npm run lint
+      - name: Unit and regression tests
+        run: npm test
+      - name: Validate migrations and database authorization
+        run: npm run test:db
+      - name: Audit production and review development advisories
+        run: npm run qa:dependencies
+      - name: Production build
+        run: npm run build
+      - name: Check source boundaries and browser bundles
+        run: npm run qa:security:bundles
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       # Authenticated API/Storage/concurrency/email acceptance remains a
@@ -53,7 +68,7 @@ jobs:
   isolated-full-stack:
     if: github.event_name == 'workflow_dispatch' && inputs.full_stack
     needs: local-security
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
       NEXT_TELEMETRY_DISABLED: "1"

@@ -105,6 +105,7 @@ test("a real captured SMTP recovery link grants the reset UI and changes the fix
     // The credential came from the real message; the application redeems it.
     await page.goto(recoveryURL.href);
     await expect(page).toHaveURL(/\/reset-password$/);
+    expect(new URL(page.url()).origin, "Auth callbacks must preserve the browser origin and host-only cookies").toBe(environment.appURL);
     await expect(page.getByRole("heading", { name: "Choose a new password", exact: true })).toBeVisible();
     const marker = (await context.cookies()).find((cookie) => cookie.name === recoveryCookieName);
     expect(Boolean(marker && marker.httpOnly && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/.test(marker.value)),
@@ -120,6 +121,7 @@ test("a real captured SMTP recovery link grants the reset UI and changes the fix
       const replayPage = await replay.newPage();
       await replayPage.goto(recoveryURL.href);
       await expect(replayPage).toHaveURL(/\/reset-password\?error=invalid$/);
+      expect(new URL(replayPage.url()).origin, "Invalid callbacks must also preserve the browser origin").toBe(environment.appURL);
       await expect(replayPage.getByRole("heading", { name: "Reset link unavailable", exact: true })).toBeVisible();
       expect((await replay.cookies()).some((cookie) => cookie.name === recoveryCookieName), "A consumed recovery link must not issue another app grant").toBe(false);
     } finally { await replay.close(); }

@@ -38,6 +38,28 @@ const failurePhases = new Set(["configuration", "database", "build", "server", "
 const processReasons = new Set(["start", "timeout", "output", "runtime", "stopped", "exit", "cleanup", "progress"]);
 const serviceCodes = new Set(["service_error", "unexpected_failure", "invalid_credentials", "email_not_confirmed", "weak_password", "same_password", "email_exists", "user_not_found", "not_admin", "signup_disabled", "otp_expired", "bad_jwt", "bad_json", "validation_failed", "over_email_send_rate_limit", "over_request_rate_limit"]);
 
+/** Progress is not acceptance evidence: only a fixed phase label may leave the child. */
+export function createAcceptancePhase({ phase } = {}) {
+  if (!failurePhases.has(phase)) throw new Error("QA progress requires an allowlisted acceptance phase.");
+  return { version: 1, status: "running", phase };
+}
+
+export function parseAcceptancePhase(output) {
+  const lines = String(output).split(/\r?\n/);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (!line.startsWith("QA_PHASE_JSON:") || line.length > 256) continue;
+    try {
+      const value = JSON.parse(line.slice("QA_PHASE_JSON:".length));
+      if (!value || typeof value !== "object" || Array.isArray(value)
+        || value.version !== 1 || value.status !== "running"
+        || Object.keys(value).length !== 3 || Object.keys(value).some((key) => !["version", "status", "phase"].includes(key))) continue;
+      return createAcceptancePhase(value);
+    } catch { /* Ignore incomplete or invalid private output, never return it. */ }
+  }
+  return null;
+}
+
 /** A failed child may export only phase/IDs, never its error or private output. */
 export function createAcceptanceFailure({ phase, code = "unknown", httpStatus = null, assertion = null, processReason = null, cleanupFailed = false }) {
   if (!failurePhases.has(phase)) throw new Error("QA failure requires an allowlisted acceptance phase.");
