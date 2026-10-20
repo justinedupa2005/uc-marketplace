@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useId, useState, useSyncExternalStore, type FormEvent } from "react";
 
 import {
   MARKETPLACE_PRICE_MAX_PHP,
@@ -20,6 +20,8 @@ const conditions: Array<{ value: MarketplaceCondition; label: string }> = [
   { value: "good", label: "Good" },
   { value: "fair", label: "Fair" },
 ];
+
+const subscribeToHydration = () => () => {};
 
 function optionalFormValue(formData: FormData, name: string) {
   const value = String(formData.get(name) ?? "").trim();
@@ -53,6 +55,9 @@ function MarketplaceFiltersForm({
   priceRangeError = null,
 }: MarketplaceFiltersProps) {
   const router = useRouter();
+  const contentId = useId();
+  const hasHydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [clientError, setClientError] = useState<string | null>(priceRangeError);
   const activeCount = countActiveMarketplaceFilters(values);
 
@@ -86,15 +91,22 @@ function MarketplaceFiltersForm({
   }
 
   return (
-    <details className="group rounded-xl border border-[#c4c5d5] bg-white shadow-sm">
-      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 text-sm font-semibold text-[#121c2a] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#0038a8] md:hidden">
+    <div className="rounded-xl border border-[#c4c5d5] bg-white shadow-sm">
+      <button
+        type="button"
+        disabled={!hasHydrated}
+        aria-expanded={mobileOpen}
+        aria-controls={contentId}
+        onClick={() => setMobileOpen((open) => !open)}
+        className="flex min-h-12 w-full items-center justify-between gap-3 px-4 text-sm font-semibold text-[#121c2a] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#0038a8] md:hidden"
+      >
         <span>Filters{activeCount > 0 ? ` (${activeCount})` : ""}</span>
-        <span aria-hidden="true" className="text-lg text-[#0038a8] group-open:rotate-180">
+        <span aria-hidden="true" className={`text-lg text-[#0038a8] ${mobileOpen ? "rotate-180" : ""}`}>
           &#8964;
         </span>
-      </summary>
+      </button>
 
-      <div className="hidden border-t border-[#e1e2ea] p-4 group-open:block md:block md:border-t-0 md:p-5">
+      <div id={contentId} className={`${mobileOpen ? "block" : "hidden"} border-t border-[#e1e2ea] p-4 md:block md:border-t-0 md:p-5`}>
         <div className="mb-4 hidden items-center justify-between md:flex">
           <h2 className="font-bold text-[#121c2a]">Filters</h2>
           {activeCount > 0 && (
@@ -107,6 +119,7 @@ function MarketplaceFiltersForm({
         <form
           action="/marketplace"
           method="get"
+          aria-label="Marketplace filters"
           onSubmit={applyFilters}
           className="grid gap-4 sm:grid-cols-2 md:grid-cols-1"
         >
@@ -233,6 +246,6 @@ function MarketplaceFiltersForm({
           </div>
         </form>
       </div>
-    </details>
+    </div>
   );
 }

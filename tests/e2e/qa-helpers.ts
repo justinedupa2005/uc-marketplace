@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { expect, type Browser, type BrowserContext, type Locator, type Page, type Route } from "@playwright/test";
+import { expect, test, type Browser, type BrowserContext, type Locator, type Page, type Route } from "@playwright/test";
+import { createQaFetch } from "../../scripts/qa/lib/process.mjs";
 
 import type { Database } from "@/types/database";
 
@@ -60,18 +61,23 @@ export function qaEnvironment() {
 export async function openQaSession(browser: Browser, role: QaRole): Promise<QaSession> {
   const environment = qaEnvironment();
   const account = environment.accounts[role];
-  const api = createClient<Database>(environment.supabaseURL, environment.key, { auth: { persistSession: false, autoRefreshToken: false } });
-  const result = await api.auth.signInWithPassword({ email: account.email, password: account.password });
+  const api = createClient<Database>(environment.supabaseURL, environment.key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: createQaFetch({ timeoutMs: 15_000 }) },
+  });
+  const result = await test.step("QA fixture API login", () => api.auth.signInWithPassword({ email: account.email, password: account.password }));
   expect(Boolean(result.error), `${role} fixture Auth login must succeed`).toBe(false);
   expect(result.data.user?.id, `${role} login must match its dedicated fixture`).toBe(account.id);
-  const profile = await api.from("profiles").select("id,role,verification_status,account_status").eq("id", account.id).single();
+  const profile = await test.step("QA fixture own-profile inspection", async () => api.from("profiles").select("id,role,verification_status,account_status").eq("id", account.id).single());
   expect(Boolean(profile.error), `${role} own profile must be readable`).toBe(false);
   expect(profile.data?.role).toBe(role === "ADMIN" ? "admin" : "student");
   expect(profile.data?.account_status).toBe(role === "SUSPENDED" ? "suspended" : "active");
   expect(profile.data?.verification_status).toBe(role === "PENDING" ? "pending" : role === "REJECTED" ? "rejected" : "verified");
 
-  const context = await browser.newContext({ baseURL: environment.appURL, viewport: { width: 1280, height: 900 }, serviceWorkers: "block" });
-  const page = await context.newPage();
+  const context = await test.step("QA isolated browser context", () => browser.newContext({ baseURL: environment.appURL, viewport: { width: 1280, height: 900 }, serviceWorkers: "block" }));
+  context.setDefaultTimeout(15_000);
+  context.setDefaultNavigationTimeout(30_000);
+  const page = await test.step("QA browser page creation", () => context.newPage());
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(redactQaSecrets(error.message)));
   try {
@@ -85,11 +91,11 @@ export async function openQaSession(browser: Browser, role: QaRole): Promise<QaS
 }
 
 export async function loginQaSession(page: Page, account: QaAccount) {
-  await page.goto("/login");
-  await page.getByLabel("Email address").fill(account.email);
-  await page.getByLabel("Password", { exact: true }).fill(account.password);
-  await page.getByRole("button", { name: "Log In", exact: true }).click();
-  await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
+  await test.step("QA login page navigation", () => page.goto("/login"));
+  await test.step("QA login email entry", () => page.getByLabel("Email address").fill(account.email));
+  await test.step("QA login password entry", () => page.getByLabel("Password", { exact: true }).fill(account.password));
+  await test.step("QA login submission", () => page.getByRole("button", { name: "Log In", exact: true }).click());
+  await test.step("QA login destination", async () => { await expect(page).not.toHaveURL(/\/login(?:\?|$)/); });
   // This catches a stale build wired to a different project before any workflow
   // mutation. No credentials are stored in browser state files.
   const project = new URL(required("QA_SUPABASE_URL")).hostname.split(".")[0];
@@ -102,6 +108,12 @@ export async function closeQaSessions(sessions: QaSession[]) {
     await session.context.close();
     await session.api.auth.signOut({ scope: "local" });
   }
+}
+
+// Next's shadow-DOM route announcer is also role=alert. Feature error checks
+// must inspect the application's main content, not accessibility announcements.
+export function contentAlerts(page: Page) {
+  return page.getByRole("main").getByRole("alert");
 }
 
 export async function confirmAction(page: Page, name: string) {
@@ -128,6 +140,20 @@ export async function expectDialogWithinViewport(dialog: Locator) {
   expect(dimensions.bottom).toBeLessThanOrEqual(dimensions.viewportHeight + 1);
   expect(dimensions.right).toBeLessThanOrEqual(dimensions.viewportWidth + 1);
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth + 1);
+}
+
+/** Native scrolling dialogs may include body and the dialog itself in their wrap path. */
+export async function tabToModalControl(page: Page, dialog: Locator, destination: Locator, key: "Tab" | "Shift+Tab") {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.keyboard.press(key);
+    if (await destination.evaluate((element) => document.activeElement === element)) return;
+    const neutralFocus = await dialog.evaluate((element) =>
+      element instanceof HTMLDialogElement && element.open
+        && (document.activeElement === document.body || document.activeElement === element),
+    );
+    if (!neutralFocus) throw new Error("Modal keyboard traversal reached an unexpected interactive control or left the modal boundary.");
+  }
+  throw new Error("Native modal keyboard traversal did not reach the expected control within three keypresses.");
 }
 
 // Hold a real, identified mutation before forwarding it to the real application.

@@ -4,6 +4,9 @@ Database changes are stored as forward-only SQL migrations in
 `supabase/migrations`. Never edit a migration after it has been applied to the
 remote project.
 
+Before deployment, complete the [CI and dependency-security release gate](../docs/ci-dependency-security.md).
+Local QA success does not certify a different GitHub commit or authorize hosted migrations.
+
 ## Migrations
 
 Apply migrations in filename order:

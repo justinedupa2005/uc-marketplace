@@ -43,10 +43,6 @@ export async function GET(request: NextRequest) {
     verified = false;
   }
 
-  const redirectTo = request.nextUrl.clone();
-  redirectTo.pathname = "/login";
-  redirectTo.search = "";
-
   if (sessionEstablished) {
     try {
       const { error } = await supabase.auth.signOut({ scope: "local" });
@@ -58,9 +54,12 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  redirectTo.searchParams.set("confirmation", verified ? "success" : "failed");
-
-  const response = NextResponse.redirect(redirectTo);
+  // Keep host-only cookies on the original browser origin; NextURL can
+  // normalize 127.0.0.1 to localhost even for a same-origin callback.
+  const response = new NextResponse(null, {
+    status: 307,
+    headers: { Location: `/login?confirmation=${verified ? "success" : "failed"}` },
+  });
   response.headers.set("Cache-Control", "private, no-store, max-age=0");
   return response;
 }

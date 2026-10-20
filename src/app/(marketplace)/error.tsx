@@ -1,10 +1,10 @@
 "use client";
 
 export default function MarketplaceError({
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   return (
     <main className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-[#f9f9ff] px-5 py-10 text-[#121c2a]">
@@ -21,7 +21,7 @@ export default function MarketplaceError({
         </p>
         <button
           type="button"
-          onClick={reset}
+          onClick={retry}
           className="mt-7 inline-flex h-12 w-full items-center justify-center rounded-md bg-[#0038a8] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#002576]"
         >
           Try Again

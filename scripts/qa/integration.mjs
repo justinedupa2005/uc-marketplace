@@ -1,4 +1,5 @@
 import { once } from "node:events";
+import { readFile, stat } from "node:fs/promises";
 import net from "node:net";
 import { setTimeout as pause } from "node:timers/promises";
 import pg from "pg";
@@ -9,7 +10,8 @@ import { runConcurrencyChecks } from "./lib/concurrency.mjs";
 import { runRealtimeChecks } from "./lib/realtime.mjs";
 import { runEmailChecks } from "./lib/email.mjs";
 import { createQaFetch, installQaInterruptHandler, launchQaProcess, QaProcessError } from "./lib/process.mjs";
-import { createAcceptanceFailure, createAcceptanceSummary } from "./lib/acceptance-summary.mjs";
+import { createAcceptanceFailure, createAcceptancePhase, createAcceptanceSummary } from "./lib/acceptance-summary.mjs";
+import { parseBrowserAcceptance } from "./lib/browser-acceptance.mjs";
 
 const apiOnly = process.argv.includes("--api-only");
 if (process.argv.slice(2).some((argument) => argument !== "--api-only")) throw new Error("Usage: node scripts/qa/integration.mjs [--api-only]");
@@ -69,12 +71,17 @@ let context;
 let completedSummary;
 let completedMessage;
 let phase = "configuration";
+function setPhase(next) {
+  const progress = createAcceptancePhase({ phase: next });
+  phase = progress.phase;
+  console.log(`QA_PHASE_JSON:${JSON.stringify(progress)}`);
+}
 let acceptanceFailure;
 let cleanupFailed = false;
 try {
   const config = await readQaEnvironment({ requireDatabase: true, requireLocal: !apiOnly, requireMailpit: !apiOnly });
   if (!apiOnly) await assertQaDotenvSafety();
-  phase = "database";
+  setPhase("database");
   pool = new pg.Pool({ connectionString: config.databaseUrl, max: 6, connectionTimeoutMillis: 10_000,
     query_timeout: 30_000, statement_timeout: 30_000, application_name: "ucmarketplace-disposable-qa" });
   pool.on("error", () => {
@@ -86,33 +93,35 @@ try {
   if (!apiOnly) {
     await requireFreePort(config.appPort);
     const appEnvironment = getQaAppEnvironment(config);
-    phase = "build";
+    setPhase("build");
     console.log("Building the production application against explicit disposable QA public configuration.");
     await runNode(["node_modules/next/dist/bin/next", "build"], appEnvironment, "Production QA build");
-    phase = "server";
+    await runNode(["scripts/qa/security-hygiene.mjs", "--bundles"], appEnvironment, "Production browser bundle security");
+    setPhase("server");
     server = launchQaProcess({ command: process.execPath, args: ["node_modules/next/dist/bin/next", "start", "-p", config.appPort, "-H", "127.0.0.1"], env: appEnvironment, label: "Dedicated QA application server", failOnUnhandledRuntime: true });
     await waitForApp(server, config.appBaseUrl);
   }
   context = createFixtureContext(config, pool);
-  phase = "provisioning";
+  setPhase("provisioning");
   await provisionAccounts(context);
   assertRunHealthy();
-  phase = "api";
+  setPhase("api");
   const apiCount = await runApiChecks(context);
   assertRunHealthy();
-  phase = "concurrency";
+  setPhase("concurrency");
   const concurrencyCount = await runConcurrencyChecks(context);
   assertRunHealthy();
-  phase = "realtime";
+  setPhase("realtime");
   const realtime = await runRealtimeChecks(context);
   assertRunHealthy();
-  phase = "email";
+  setPhase("email");
   const emailCount = apiOnly ? 0 : await runEmailChecks(context, { createSignupFixture });
   assertRunHealthy();
   if (!apiOnly) {
-    phase = "browser";
+    setPhase("browser");
     console.log("Running isolated browser-account workflows; traces, screenshots, video, and persisted session state are disabled.");
-    await runNode(["node_modules/@playwright/test/cli.js", "test", "--project=qa-chromium"], {
+    const browserStartedAt = Date.now();
+    await runNode(["node_modules/@playwright/test/cli.js", "test", "--project=anonymous-chromium", "--project=qa-chromium", "--forbid-only"], {
       ...getQaBrowserEnvironment(config), ...accountEnvironment(context.accounts),
       QA_SUPABASE_URL: config.supabaseUrl,
       QA_SUPABASE_PUBLISHABLE_KEY: config.publishableKey,
@@ -120,6 +129,11 @@ try {
       QA_BROWSER_ALLOW_MUTATIONS: "1",
       QA_MAILPIT_URL: config.mailpitUrl,
     }, "Authenticated browser acceptance");
+    const reportPath = "node_modules/.cache/uc-qa-browser/report.json";
+    if ((await stat(reportPath)).mtimeMs < browserStartedAt) throw new Error("QA browser report is stale; no completed acceptance evidence is available.");
+    const browserCounts = parseBrowserAcceptance(JSON.parse(await readFile(reportPath, "utf8")));
+    if (!browserCounts) throw new Error("QA browser report does not confirm every required anonymous and authenticated suite.");
+    console.log(`Browser acceptance passed ${browserCounts.anonymousTests} anonymous and ${browserCounts.authenticatedTests} authenticated tests.`);
   }
   assertRunHealthy();
   completedSummary = createAcceptanceSummary({ apiChecks: apiCount, concurrencyScenarios: concurrencyCount, realtimeScenarios: realtime.count, emailAuthChecks: emailCount, authenticatedBrowser: !apiOnly, apiOnly });
@@ -133,6 +147,7 @@ try {
   console.error(`QA failed: ${controlled ? error.message : "Acceptance could not complete. Inspect only the disposable services and sanitized test results."}`);
   process.exitCode = 1;
 } finally {
+  console.log(`QA_PHASE_JSON:${JSON.stringify(createAcceptancePhase({ phase: "cleanup" }))}`);
   // An interrupt cancels normal requests, but owned fixture cleanup still gets
   // bounded HTTP requests with a fresh signal before the wrapper is restored.
   requestSignal = new AbortController().signal;

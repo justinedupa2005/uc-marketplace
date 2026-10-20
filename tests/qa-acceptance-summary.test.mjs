@@ -1,8 +1,37 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createAcceptanceFailure, createAcceptanceSummary, parseAcceptanceFailure, parseAcceptanceSummary } from "../scripts/qa/lib/acceptance-summary.mjs";
+import { createAcceptanceFailure, createAcceptancePhase, createAcceptanceSummary, parseAcceptanceFailure, parseAcceptancePhase, parseAcceptanceSummary } from "../scripts/qa/lib/acceptance-summary.mjs";
 
 const complete = { apiChecks: 100, concurrencyScenarios: 3, realtimeScenarios: 4, emailAuthChecks: 12, authenticatedBrowser: true, apiOnly: false };
+
+test("live acceptance progress exports only a fixed running phase, never private metadata", () => {
+  const phases = ["configuration", "database", "build", "server", "provisioning", "api", "concurrency", "realtime", "email", "browser", "cleanup"];
+  for (const phase of phases) {
+    const value = createAcceptancePhase({ phase, message: "private-token", rows: ["private-student"], status: "passed", version: 2 });
+    assert.deepEqual(value, { version: 1, status: "running", phase });
+    assert.doesNotMatch(JSON.stringify(value), /private-|passed/);
+  }
+  for (const phase of [undefined, null, "private-token", "browser\nprivate-token", {}, ["api"]]) {
+    assert.throws(() => createAcceptancePhase({ phase }), /allowlisted acceptance phase/);
+  }
+});
+
+test("live phase parsing keeps the newest valid phase and never exposes malformed or injected output", () => {
+  const build = createAcceptancePhase({ phase: "build" });
+  const browser = createAcceptancePhase({ phase: "browser" });
+  const line = (value) => `QA_PHASE_JSON:${JSON.stringify(value)}`;
+  assert.deepEqual(parseAcceptancePhase(`private-sdk-output\r\n${line(build)}\r\n${line(browser)}\r\nprivate-error\r\n`), browser);
+  const invalid = [
+    "private-token", " QA_PHASE_JSON:{}", "QA_PHASE_JSON:not-json", "QA_PHASE_JSON:{", line(null), line([]), line("browser"), line({}),
+    line({ ...browser, version: 2 }), line({ ...browser, status: "passed" }), line({ ...browser, phase: "private-token" }),
+    line({ ...browser, phase: null }), line({ ...browser, phase: ["api"] }), line({ ...browser, error: "private-token" }),
+    line({ ...browser, releaseReady: true }), line({ ...browser, privatePayload: "private-token".repeat(100) }),
+  ];
+  for (const output of invalid) {
+    assert.equal(parseAcceptancePhase(output), null);
+    assert.deepEqual(parseAcceptancePhase(`${line(build)}\n${output}\n`), build);
+  }
+});
 test("sanitized summaries never promote local acceptance to deployed/external release approval", () => {
   const summary = createAcceptanceSummary({ ...complete, secret: "must-not-be-exported", email: "private@example.test" });
   assert.equal(summary.releaseReady, false);

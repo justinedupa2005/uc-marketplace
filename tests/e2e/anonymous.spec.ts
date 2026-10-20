@@ -1,4 +1,36 @@
 import { expect, test } from "@playwright/test";
+import { contentAlerts, tabToModalControl } from "./qa-helpers";
+
+test("application error assertions exclude the framework route announcer but retain real errors", async ({ page }) => {
+  await page.setContent('<main><h1>QA alert scope</h1></main><next-route-announcer></next-route-announcer>');
+  await page.locator("next-route-announcer").evaluate((host) => {
+    const root = host.attachShadow({ mode: "open" });
+    const announcement = document.createElement("div");
+    announcement.setAttribute("role", "alert");
+    announcement.textContent = "QA route announcement";
+    root.appendChild(announcement);
+  });
+  await expect(page.getByRole("alert")).toHaveCount(1);
+  await expect(contentAlerts(page)).toHaveCount(0);
+  await page.getByRole("main").evaluate((main) => {
+    const error = document.createElement("p");
+    error.setAttribute("role", "alert");
+    error.textContent = "QA application failure";
+    main.appendChild(error);
+  });
+  await expect(page.getByRole("alert")).toHaveCount(2);
+  await expect(contentAlerts(page)).toHaveText("QA application failure");
+});
+
+test("required form controls are found by accessible names without decorative asterisks", async ({ page }) => {
+  await page.setContent('<main><label for="description">Description <span aria-hidden="true">*</span></label><textarea id="description" required></textarea><label for="category">Category <span aria-hidden="true">*</span></label><select id="category" required><option value="">Select a category</option><option value="qa">QA category</option></select></main>');
+  const description = page.getByRole("textbox", { name: "Description", exact: true });
+  const category = page.getByRole("combobox", { name: "Category", exact: true });
+  await description.fill("QA accessible form entry");
+  await category.selectOption("qa");
+  await expect(description).toHaveValue("QA accessible form entry");
+  await expect(category).toHaveValue("qa");
+});
 
 const fixtureId = "00000000-0000-4000-8000-000000000015";
 const protectedRoutes = [
@@ -134,4 +166,45 @@ test("login controls support keyboard and password visibility without submitting
   await page.keyboard.press("Shift+Tab");
   await expect(email).toBeFocused();
   expect(pageErrors).toEqual([]);
+});
+
+test("native scrolling dialogs wrap keyboard focus without reaching background controls", async ({ page }) => {
+  for (const width of [375, 390, 430, 1280, 1440, 1920]) {
+    await page.setViewportSize({ width, height: width < 500 ? 667 : 900 });
+    await page.setContent(`
+      <style>
+        dialog { margin: auto; max-height: calc(100dvh - 2rem); width: calc(100% - 2rem); max-width: 512px; overflow-y: auto; padding: 0; }
+        form { padding: 24px; }
+        textarea { display: block; }
+        .content { height: 480px; }
+      </style>
+      <button id="background" type="button">Background action</button>
+      <dialog aria-label="QA native modal">
+        <form>
+          <button id="close" type="button">Close</button>
+          <label for="message">Message</label><textarea id="message" rows="4"></textarea>
+          <div class="content">Static scrollable modal content.</div>
+          <button id="submit" type="submit">Submit</button>
+        </form>
+      </dialog>
+    `);
+    const background = page.getByRole("button", { name: "Background action", exact: true });
+    await background.evaluate((element) => {
+      element.addEventListener("focus", () => element.setAttribute("data-focused", "true"));
+    });
+    const dialog = page.getByRole("dialog", { name: "QA native modal", exact: true });
+    await page.locator("dialog").evaluate((element) => (element as HTMLDialogElement).showModal());
+    const first = dialog.getByRole("button", { name: "Close", exact: true });
+    const last = dialog.getByRole("button", { name: "Submit", exact: true });
+    await expect(first).toBeFocused();
+    if (width < 500) expect(await dialog.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+    await last.focus();
+    await tabToModalControl(page, dialog, first, "Tab");
+    await expect(first).toBeFocused();
+    await tabToModalControl(page, dialog, last, "Shift+Tab");
+    await expect(last).toBeFocused();
+    await expect(background).not.toHaveAttribute("data-focused", "true");
+    await page.keyboard.press("Escape");
+    await expect(dialog).not.toBeVisible();
+  }
 });
