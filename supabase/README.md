@@ -7,6 +7,11 @@ remote project.
 Before deployment, complete the [CI and dependency-security release gate](../docs/ci-dependency-security.md).
 Local QA success does not certify a different GitHub commit or authorize hosted migrations.
 
+For hosted integration testing, use the [separate staging environment](../docs/staging-environment.md).
+It has an explicitly registered project, protected Vercel configuration, synthetic
+fixtures, and an approval-gated migration workflow. Never use the existing linked
+project as staging or run a linked reset/push to bootstrap testing.
+
 ## Migrations
 
 Apply migrations in filename order:

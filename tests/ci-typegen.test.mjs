@@ -27,6 +27,7 @@ test("a real clean checkout reproduction fails before generation and passes next
   try {
     await cp(path.join(root, "src"), path.join(fixture, "src"), { recursive: true });
     await cp(path.join(root, "scripts"), path.join(fixture, "scripts"), { recursive: true });
+    await cp(path.join(root, "config"), path.join(fixture, "config"), { recursive: true });
     for (const name of ["package.json", "tsconfig.json", "next.config.ts"]) await cp(path.join(root, name), path.join(fixture, name));
     await mkdir(path.join(fixture, "tests"));
     await cp(path.join(root, "tests/e2e"), path.join(fixture, "tests/e2e"), { recursive: true });

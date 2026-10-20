@@ -22,7 +22,11 @@
     "audit:production": "npm audit --omit=dev --audit-level=high",
     "qa:dependencies": "node scripts/qa/dependencies.mjs",
     "qa:secrets": "node scripts/qa/repository-secrets.mjs",
-    "qa:release": "node scripts/qa/release.mjs"
+    "qa:release": "node scripts/qa/release.mjs",
+    "staging:plan": "node scripts/staging/migrate.mjs --plan",
+    "staging:migrate": "node scripts/staging/migrate.mjs --apply",
+    "staging:seed": "node scripts/staging/seed.mjs",
+    "staging:verify": "node scripts/staging/verify.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",

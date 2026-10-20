@@ -3,7 +3,7 @@ name: Security and workflow checks
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, staging]
   workflow_dispatch:
     inputs:
       full_stack:
