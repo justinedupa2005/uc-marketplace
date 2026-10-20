@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "reviewedOn": "2026-10-20",
+  "expiresOn": "2026-11-19",
+  "advisory": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
+  "severity": "high",
+  "packages": {
+    "@next/eslint-plugin-next": "16.3.8",
+    "braces": "3.0.3",
+    "eslint-config-next": "16.3.8",
+    "fast-glob": "3.3.1",
+    "micromatch": "4.0.8"
+  },
+  "reason": "No patched braces release exists. npm proposes an incompatible eslint-config-next 14 downgrade, not a compatible fix.",
+  "mitigation": "Development lint tooling only; no student input supplies lint rootDir glob patterns. CI uses disposable runners, bounded jobs, read-only tokens and no repository secrets. Re-review upstream and this exact lockfile chain within 30 days."
+}

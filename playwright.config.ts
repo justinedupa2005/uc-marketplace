@@ -22,6 +22,9 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: 0,
   workers: 1,
+  // End within the integration child's deadline, leaving time for its scoped
+  // cleanup. Incomplete/aborted execution remains a failing reporter result.
+  globalTimeout: 720_000,
   timeout: 45_000,
   expect: { timeout: 15_000 },
   // Apply before fixture validation too: even a failed direct QA invocation
@@ -39,6 +42,8 @@ export default defineConfig({
     screenshot: "off",
     video: "off",
     serviceWorkers: "block",
+    actionTimeout: 15_000,
+    navigationTimeout: 30_000,
   },
   projects: [
     { name: "anonymous-chromium", testMatch: "anonymous.spec.ts" },

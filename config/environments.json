@@ -1,0 +1,15 @@
+{
+  "production": {
+    "supabaseProjectRef": "fezeqoqdrmicvxpbgnaf",
+    "note": "Existing linked project is protected, even while inactive. Never use for staging or QA."
+  },
+  "staging": {
+    "supabaseProjectRef": "niocptgzzbozpbfzifdk",
+    "supabaseProjectName": "uc-online-shop-staging",
+    "region": "ap-southeast-2",
+    "appOrigin": "https://uc-online-shop-staging.vercel.app",
+    "branch": "staging",
+    "vercelProjectId": "prj_R9felUNyhj0jz97aNM1bn7FnHM4Z",
+    "vercelTeamId": "team_ybndV8iSM3Lq00F0aNlotdbZ"
+  }
+}

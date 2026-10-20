@@ -9,7 +9,7 @@
     "db:types": "supabase gen types typescript --linked --schema public > src/types/database.generated.ts",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types tests/*.test.mjs",
     "test:db": "node scripts/qa/database.mjs",
     "test:e2e": "playwright test --project=anonymous-chromium",
@@ -19,7 +19,14 @@
     "qa:local": "node scripts/qa/local.mjs",
     "qa:security": "node scripts/qa/security-hygiene.mjs",
     "qa:security:bundles": "node scripts/qa/security-hygiene.mjs --bundles",
-    "audit:production": "npm audit --omit=dev --audit-level=high"
+    "audit:production": "npm audit --omit=dev --audit-level=high",
+    "qa:dependencies": "node scripts/qa/dependencies.mjs",
+    "qa:secrets": "node scripts/qa/repository-secrets.mjs",
+    "qa:release": "node scripts/qa/release.mjs",
+    "staging:plan": "node scripts/staging/migrate.mjs --plan",
+    "staging:migrate": "node scripts/staging/migrate.mjs --apply",
+    "staging:seed": "node scripts/staging/seed.mjs",
+    "staging:verify": "node scripts/staging/verify.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",

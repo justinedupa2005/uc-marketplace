@@ -20,6 +20,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "UC Marketplace",
   description: "A campus marketplace for verified UC Main students.",
+  robots: process.env.APP_ENV === "production" ? undefined : { index: false, follow: false, noarchive: true },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

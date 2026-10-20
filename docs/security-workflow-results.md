@@ -1,6 +1,6 @@
 # Step 15 execution record
 
-Initial record: 2026-10-08; continuation results for 2026-10-12–13 are below.
+Initial record: 2026-10-08; dated continuation results are below.
 Workspace: local Windows/Node.js 22, working tree based on
 `ab8f9240cf3840ac7fb2afe91e8433c51b73c79c`. At the time of this initial record,
 these Step 15 changes had not been committed, pushed or deployed. No hosted
@@ -238,3 +238,107 @@ Final verification in this continuation:
 The reported Realtime delivery timeout is fixed and its four native scenarios
 pass. Full local/browser and deployed/external release acceptance remain
 **not passed**; the new blocker is the broader authenticated browser timeout.
+
+## Launch preparation, Step 1 live QA: 2026-10-15
+
+This continuation starts from published commit
+`249f8fd26098f4ab089010de3091cf3ec22460d9`. Its scope is disposable local
+acceptance, regression fixes and evidence, not a hosted migration or deployment.
+Dates in this section use the workspace's Asia/Manila calendar date.
+
+Failures found and corrected:
+
+- Windows QA resolves the installed Docker Desktop CLI even when a new terminal
+  has not inherited its PATH. Any PATH addition is child-process-only. Local
+  context, engine, CLI and free-port guards still run before fixture creation.
+- The one-command runner now includes TypeScript, ESLint, all regression tests,
+  fresh embedded migration assertions and source checks before native startup,
+  then reads native security catalogs after the passing messaging gate.
+- Closed native `details` hid desktop filters despite their desktop CSS, while
+  the disclosure was hidden at that width. One responsive form now uses an
+  explicit mobile disclosure and independently visible desktop content.
+- Filter disclosure and profile-photo selection wait for client readiness before
+  accepting input. This prevents early events from being lost before handlers
+  attach. Regression coverage includes real SSR and live browser behavior,
+  following [Playwright's hydration guidance](https://playwright.dev/docs/navigations#hydration).
+- The installed NextURL normalizes loopback callback hosts to `localhost`.
+  Absolute confirmation/recovery redirects therefore lost the original
+  `127.0.0.1` host-only cookies. These route handlers now use fixed relative
+  Locations. Real NextRequest/NextResponse regressions include loopback/HTTPS
+  origins and attacker-controlled redirect hints. Grant signatures, expiry,
+  user/session binding, AMR checks and Secure/HttpOnly properties are unchanged.
+- The marketplace error boundary now calls the installed framework's `retry`
+  callback, with executable component regressions for the retry controls.
+- Browser assertions distinguish Next's route-announcer alert from application
+  errors, use accessible names without decorative label characters, and allow
+  only bounded native dialog/body focus stops without allowing background focus.
+- Message persistence checks inspect exactly one stored row and normalize only
+  multipart CRLF line endings; they still preserve whitespace and reject
+  duplicate sends. Client navigations must commit before URL-derived inspection.
+- Student-report inspection identifies the exact UI submission, rather than
+  treating the earlier API test's dismissed report for the same pair as the new
+  report. Historical reports are intentionally retained, not deleted to pass.
+- Bounded safe phase/step reporting exposes source locations, not private call
+  logs. Complete fresh evidence must cover anonymous, authenticated and recovery
+  sources with no failures/skips/runtime errors; focused/discovery/API-only runs
+  cannot pass full acceptance. `--forbid-only` prevents accidental focused tests.
+
+The focused captured-SMTP recovery run passed: the real link preserved its
+browser origin, granted the reset form, rejected replay and changed the fixture
+password, with the old credential rejected and the new credential accepted.
+Its eight run-owned accounts/files were removed and only its owned stack was
+stopped. The production dependency audit reported zero vulnerabilities.
+
+Final fresh verification completed successfully:
+
+- `npm.cmd run qa:local` exited **0** on the newly created disposable project
+  `ucmarketplace-qa-52f99d34c6ce8e59`. It exported its passing summary only after
+  fixture/server cleanup and owned-stack shutdown succeeded.
+- TypeScript and ESLint passed. All **335 unit/regression tests** passed, with
+  zero failures, cancellations or skips.
+- All **18 migrations / 535 embedded SQL assertions** passed, followed by
+  **36 native messaging assertions** and **129 native security-catalog assertions**.
+- The production QA build passed. Source/browser-bundle hygiene also passed:
+  **217 source modules / 48 browser chunks**.
+- Live acceptance passed **248 Auth/API/Storage checks**, **3 real PostgreSQL
+  concurrency scenarios**, **4 Realtime scenarios** and **12 captured local
+  SMTP/Auth checks**, including the intentional OTP-expiry wait.
+- All **46 Chromium tests** passed: **40 anonymous + 6 authenticated/recovery**.
+  The final report recorded zero runner errors and zero unexpected unhandled
+  runtime signals. No browser failures, skips or retries were accepted.
+- `npm.cmd run audit:production` reported **zero vulnerabilities**. This is a
+  production-dependency audit, not a claim that development-tool advisories from
+  earlier records are resolved.
+- A post-run Docker query confirmed **zero running containers** for this exact
+  project. Only run-owned temporary accounts/records/files were removed; local
+  backups and ignored scratch files were retained. No development/hosted project
+  was reset or reused.
+- `git diff --check` passed. HEAD remains the published commit listed above;
+  no commit, push, hosted migration/publication change or deployment was made.
+
+Counts-only evidence is retained in ignored
+`.qa/stack-ENwg03/acceptance-summary.json` (executed at
+`2026-10-15T02:27:34.153Z`) and
+`node_modules/.cache/uc-qa-browser/report.json`. The summary states
+`mode=full_local`, `status=passed`, and `releaseReady=false`.
+
+Step 1 completion criteria:
+
+- [x] Docker full-stack QA succeeds.
+- [x] All required local automated tests pass.
+- [x] TypeScript and lint pass.
+- [x] Production build completes successfully.
+- [x] Authentication, RLS and Storage checks pass.
+- [x] Known blocking failures are fixed with regression coverage.
+- [x] QA results are documented.
+
+**Step 1 local live QA is complete.** This supersedes the earlier local-browser
+blocker, not the separate release gates. External student-inbox delivery,
+aged-session reauthentication, signed-URL expiry and intended deployed-project
+acceptance still require their own verification; staging/production setup and
+official launch are not approved by this local pass.
+
+The ignored `.next` output is built with disposable QA public configuration.
+Use `npm.cmd run dev` for normal development, and rebuild with the intended
+environment before using `npm.cmd start` or deploying; do not reuse the QA build
+as a staging or production artifact.

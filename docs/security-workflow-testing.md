@@ -70,6 +70,13 @@ ignored `.qa/stack-*`, copies the tracked migrations/templates, and uses API
 eight-digit OTPs, 60-second OTP expiry and resend throttling remain enabled.
 Only isolated test throughput limits are increased for fixture/UI sign-ins.
 
+The command first checks Docker Engine and the installed Supabase CLI, then
+runs Next route type generation, TypeScript, ESLint, the complete regression suite, fresh embedded migration
+and SQL assertions, and source security checks. On Windows it locates either
+the PATH Docker CLI or the standard per-user/system Docker Desktop installation.
+Any PATH addition stays in its child environment; no permanent PATH or registry
+change is required. Docker Desktop itself must already be running.
+
 CLI credentials and process diagnostics stay private and bounded. The launcher
 uses the installed native CLI binary, not an environment executable override.
 Actual database-only messaging assertions must pass before the staged Realtime
@@ -80,9 +87,12 @@ expose only SQLSTATE, statement number, assertion counts and exact allowlisted
 scenario names, not SQL text or observed rows. Later acceptance failures expose
 only the phase, bounded service code/HTTP status, numeric assertion, process
 failure reason and cleanup status. Raw child diagnostics remain withheld.
-API, real
-transaction races, Realtime, captured-email Auth flows and five authenticated
-browser tests then run. OTP expiry testing deliberately waits 62 seconds.
+Read-only native security catalog assertions then inspect the fully migrated
+database. The production build and browser-bundle security scan, API/Storage,
+real transaction races, Realtime, captured-email Auth flows, and both anonymous
+and authenticated Chromium suites follow. OTP expiry testing deliberately waits
+62 seconds. Browser actions, navigation and fixture HTTP requests have bounded
+operation deadlines; an overall browser deadline leaves time for fixture cleanup.
 
 Protected fixture profile states are seeded through the explicitly configured
 database connection, in a transaction that locks and verifies each recorded
@@ -104,6 +114,21 @@ email bodies, student evidence or raw stack/locator diagnostics. Discovery with
 `--list` is explicitly **not execution** and does not overwrite previous evidence;
 a zero-test execution cannot pass. Local full-stack success does not approve
 external SMTP delivery or the deployed release.
+
+While executing, the launcher reports only allowlisted phase names. The browser
+reporter's companion `report.json.progress.json` records running/completed
+status and source-file/line locations, never locator arguments or raw errors.
+A killed run leaves running progress rather than inventing final acceptance.
+Fresh final browser evidence must cover anonymous, authenticated and recovery
+sources, with every test passing and zero runner/unhandled-runtime errors.
+API-only summaries, stale reports, skipped/empty suites and failed cleanup
+cannot pass `qa:local`. UI error checks scope application content: Next's own
+screen-reader route-announcement alert is not a marketplace error.
+
+The final `.next` output uses the disposable QA public configuration. Start
+normal development with `npm.cmd run dev`; rebuild with the intended environment
+before using `npm.cmd start` or deploying. A passing QA build is not an artifact
+to reuse for staging or production.
 
 ## Required password-recovery signing configuration
 
@@ -133,6 +158,10 @@ generates a fresh in-memory value for its owned build/server and removes it from
 Playwright workers. Its dotenv preflight also refuses this secret in application
 dotenv files, ensuring that the disposable run cannot inherit deployment secrets.
 
+Before promoting a commit, also complete the [Step 2 CI/dependency-security
+gate](ci-dependency-security.md). A previous local pass cannot replace successful
+GitHub checks for the exact clean deployment SHA.
+
 The application signs a fifteen-minute, user-and-session-bound HttpOnly recovery
 grant only after a successful typed recovery-token exchange and live Auth identity
 checks. Supabase's direct OTP verification records an OTP authentication method,
@@ -141,6 +170,13 @@ The delivered recovery callback supplies that provenance before a grant is issue
 PKCE exchanges retain the stricter recovery-method check. Plain/forged markers,
 signup OTP sessions, unrelated password sessions and replayed links do not create
 a grant. See [the upstream Auth verification implementation](https://github.com/supabase/auth/blob/master/internal/api/verify.go).
+
+Email confirmation and recovery route handlers return fixed relative redirect
+destinations. This preserves the browser origin and host-only session cookies
+when NextURL normalizes loopback addresses; neither incoming Host headers nor
+callback redirect hints choose the destination. Regression tests use the actual
+installed NextRequest/NextResponse, and real SMTP browser recovery asserts that
+the origin remains unchanged on both successful redemption and replay denial.
 
 ## Isolated full-stack QA
 
@@ -270,8 +306,8 @@ No service-generated confirmation link or email-confirmation bypass is used.
 Mailpit reads and deletion are restricted to the exact run-owned recipient and
 captured IDs; a generic network failure cannot count as an Auth denial.
 
-Five authenticated browser tests cover access boundaries, marketplace workflows,
-network/keyboard behavior and application password recovery. Real mutation
+Six authenticated browser tests cover access boundaries, marketplace workflows,
+responsive filter disclosure, network/keyboard behavior and application password recovery. Real mutation
 requests are held and forwarded to test loading controls and duplicate-submit
 prevention. Browser offline mode checks favorite rollback, message draft retention
 and successful retries against trusted persisted state. Reporting/reservation
