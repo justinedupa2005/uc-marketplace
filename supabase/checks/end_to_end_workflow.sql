@@ -215,7 +215,7 @@ select pg_temp.qa15_expect_rejected('buyer cannot complete seller sale', format(
 reset role;
 select pg_temp.qa15_login('seller'); set local role authenticated;
 select public.upsert_meetup(id, 'UC Main Campus Lobby', 'At the front desk', now() + interval '2 days', 'Updated meeting instructions.', (select value from pg_temp.qa15_versions where label = 'meetup_initial')) from pg_temp.qa15_runtime where label = 'reservation';
-select pg_temp.qa15_expect_rejected('stale meetup edit is rejected rather than overwriting newer details', format('select public.upsert_meetup(%L::uuid,%L,null,now()+interval ''1 day'',null,%L::timestamptz)', (select id from pg_temp.qa15_runtime where label = 'reservation'), 'Stale location', (select value from pg_temp.qa15_versions where label = 'meetup_initial')), '40001');
+select pg_temp.qa15_expect_rejected('stale meetup edit is rejected rather than overwriting newer details', format('select public.upsert_meetup(%L::uuid,%L,null,now()+interval ''1 day'',null,%L::timestamptz)', (select id from pg_temp.qa15_runtime where label = 'reservation'), 'Stale location', (select value from pg_temp.qa15_versions where label = 'meetup_initial')), 'PT409');
 reset role;
 
 select pg_temp.qa15_login('outsider'); set local role authenticated;

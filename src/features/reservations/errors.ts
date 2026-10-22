@@ -61,7 +61,8 @@ export function mapReservationError(
       return invalidMessages[operation];
     case "P0002":
       return staleMessages[operation];
-    case "40001":
+    case "PT409":
+    case "40001": // Older deployments/native serialization conflicts.
       return operation === "meetup"
         ? "Meetup details changed while this form was open. Close it and reopen the latest details before saving."
         : "This reservation changed while you were viewing it. Refresh and try again.";

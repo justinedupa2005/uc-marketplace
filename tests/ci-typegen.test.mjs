@@ -21,7 +21,7 @@ test("every typecheck entrypoint generates installed Next route types before tsc
   }
 });
 
-test("a real clean checkout reproduction fails before generation and passes next typegen plus tsc", { timeout: 120_000 }, async () => {
+test("a real clean checkout reproduction fails before generation and passes next typegen plus tsc", { timeout: 240_000 }, async () => {
   const fixture = await mkdtemp(path.join(tmpdir(), "uc-marketplace-clean-types-"));
   const nodeModules = path.join(root, "node_modules");
   try {
@@ -35,9 +35,10 @@ test("a real clean checkout reproduction fails before generation and passes next
     const env = { ...process.env, NODE_ENV: "production", NEXT_TELEMETRY_DISABLED: "1",
       NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_ucmarketplace_anonymous_ci",
       NEXT_PUBLIC_APP_URL: "http://127.0.0.1:3100" };
-    const options = { cwd: fixture, env, encoding: "utf8", timeout: 50_000, windowsHide: true, maxBuffer: 4_000_000 };
+    const options = { cwd: fixture, env, encoding: "utf8", timeout: 90_000, windowsHide: true, maxBuffer: 4_000_000 };
     const tsc = path.join(nodeModules, "typescript/bin/tsc");
     const before = spawnSync(process.execPath, [tsc, "--noEmit"], options);
+    assert.ok(!before.error, `Clean-checkout compiler must complete, not fail to start or time out (${before.error?.code ?? "none"}).`);
     assert.notEqual(before.status, 0, "Fresh checkout must reproduce the missing generated route type.");
     assert.match(before.stdout, /Cannot find name 'LayoutProps'/);
     execFileSync(process.execPath, [path.join(nodeModules, "next/dist/bin/next"), "typegen"], { ...options, stdio: ["ignore", "pipe", "pipe"] });

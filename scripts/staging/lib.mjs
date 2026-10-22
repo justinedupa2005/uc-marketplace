@@ -22,7 +22,8 @@ export function createManagementApi(env, fetcher = fetch) {
   const ref = validateStagingTarget(env);
   return async function api(suffix, { method = "GET", body } = {}) {
     // No caller-supplied host/ref, redirects, query parameters or arbitrary API paths.
-    if (!["", "/database/query", "/database/query/read-only", "/config/auth", "/api-keys"].includes(suffix)) {
+    const methods = { "": "GET", "/database/query": "POST", "/database/query/read-only": "POST", "/config/auth": "GET", "/api-keys": "GET", "/types/typescript?included_schemas=public": "GET" };
+    if (methods[suffix] !== method) {
       throw new Error("Unrecognized staging API operation.");
     }
     let response;

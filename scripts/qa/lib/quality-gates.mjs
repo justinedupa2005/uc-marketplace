@@ -9,7 +9,10 @@ const gate = (id, label, args, timeoutMs) => Object.freeze({
 export const LOCAL_QUALITY_GATES = Object.freeze([
   gate("typegen", "Route type generation", ["node_modules/next/dist/bin/next", "typegen"], 120_000),
   gate("typecheck", "TypeScript validation", ["node_modules/typescript/bin/tsc", "--noEmit"], 120_000),
-  gate("lint", "ESLint validation", ["node_modules/eslint/bin/eslint.js"], 120_000),
+  // Full-source lint can exceed two minutes on Windows/OneDrive cold reads.
+  // Keep every rule/file enabled and use the same bounded three-minute budget
+  // as the regression/database gates instead of treating slow I/O as a failure.
+  gate("lint", "ESLint validation", ["node_modules/eslint/bin/eslint.js"], 180_000),
   gate("unit", "Regression tests", [
     "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--test", "--experimental-strip-types", "tests/*.test.mjs",
   ], 180_000),

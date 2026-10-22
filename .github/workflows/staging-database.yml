@@ -50,9 +50,25 @@ jobs:
           STAGING_PROJECT_REF: niocptgzzbozpbfzifdk
           STAGING_ALLOW_MUTATIONS: "1"
           STAGING_MANAGEMENT_TOKEN: ${{ secrets.STAGING_MANAGEMENT_TOKEN }}
+      - name: Inspect actual schema, RLS, Storage and publication without writes
+        if: ${{ !inputs.apply }}
+        run: npm run staging:audit
+        env:
+          STAGING_PROJECT_REF: niocptgzzbozpbfzifdk
+          STAGING_ALLOW_MUTATIONS: "1"
+          STAGING_MANAGEMENT_TOKEN: ${{ secrets.STAGING_MANAGEMENT_TOKEN }}
       - name: Apply and validate reviewed staging migrations
         if: ${{ inputs.apply }}
         run: npm run staging:migrate
+        env:
+          STAGING_PROJECT_REF: niocptgzzbozpbfzifdk
+          STAGING_ALLOW_MUTATIONS: "1"
+          STAGING_MANAGEMENT_TOKEN: ${{ secrets.STAGING_MANAGEMENT_TOKEN }}
+      - name: Verify the applied schema and generated public types
+        if: ${{ inputs.apply }}
+        run: |
+          npm run staging:audit
+          npm run db:types:check
         env:
           STAGING_PROJECT_REF: niocptgzzbozpbfzifdk
           STAGING_ALLOW_MUTATIONS: "1"

@@ -1,4 +1,5 @@
 import { createManagementApi, loadMigrations, migrationQuery, planMigrations, verifyStagingProject } from "./lib.mjs";
+import { auditStaging } from "./audit.mjs";
 
 try {
   const args = process.argv.slice(2);
@@ -18,6 +19,9 @@ try {
   if (!args.includes("--apply")) {
     console.log("Read-only plan completed. No schema or application data changed.");
   } else {
+    // Version/checksum agreement is insufficient: refuse Dashboard-created
+    // schema, grants or policy drift before touching an existing staging DB.
+    if (applied.length) await auditStaging();
     const write = (query) => api("/database/query", { method: "POST", body: { query } });
     await write(`begin;
 create schema if not exists supabase_migrations;

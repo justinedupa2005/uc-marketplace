@@ -44,7 +44,7 @@ const sqlstateClasses = new Set("00 01 02 03 08 09 0A 0B 0F 0L 0P 0Z 20 21 22 23
 export function qaFailureMetadata(result) {
   const codes = [result?.error?.code, result?.error?.statusCode];
   const qaErrorCode = codes.find((code) => typeof code === "string" && (
-    knownServiceCodes.has(code) || /^PGRST\d{3}$/.test(code)
+    knownServiceCodes.has(code) || /^PGRST\d{3}$/.test(code) || /^PT[1-5]\d{2}$/.test(code)
     || (/^[0-9A-Z]{5}$/.test(code) && sqlstateClasses.has(code.slice(0, 2)))
   )) ?? "service_error";
   let qaHttpStatus = null;

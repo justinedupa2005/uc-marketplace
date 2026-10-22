@@ -84,6 +84,16 @@ test("negative Data API checks require an expected SQLSTATE, not just an error",
   assert.equal(isExpectedDataDenial({ data: null, error: { message: "fetch failed" }, status: 0 }), false);
 });
 
+test("business conflicts return a non-retryable HTTP 409 without accepting gateway outages", () => {
+  assert.deepEqual(qaFailureMetadata(denied("PT409", 409)), { qaErrorCode: "PT409", qaHttpStatus: 409 });
+  assert.equal(isExpectedDataDenial(denied("PT409", 409), ["PT409"]), true);
+  assert.equal(isExpectedDataDenial(denied("PT409", 409)), false);
+  for (const status of [500, 502, 503, 504]) {
+    assert.equal(isExpectedDataDenial(denied("PT409", status), ["PT409"]), false);
+    assert.equal(isExpectedDataDenial(denied("", status), ["PT409"]), false);
+  }
+});
+
 test("expected PostgREST rollback/no-data SQLSTATEs may map to 500 without allowing outages", () => {
   assert.equal(isExpectedDataDenial(denied("P0002", 500)), true);
   assert.equal(isExpectedDataDenial(denied("40001", 500), ["40001"]), true);

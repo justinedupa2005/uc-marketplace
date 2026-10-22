@@ -415,7 +415,7 @@ checks(check_name, passed) as (
       )) ilike '%if not found and p_expected_updated_at is not null%'
       and pg_get_functiondef(to_regprocedure(
         'public.upsert_meetup(uuid,text,text,timestamptz,text,timestamptz)'
-      )) ilike '%errcode = ''40001''%'
+      )) ilike '%errcode = ''PT409''%'
     ),
     (
       'sale completion is seller-only and atomically closes all three records',

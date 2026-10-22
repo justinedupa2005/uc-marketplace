@@ -59,6 +59,16 @@ test("serialization conflicts ask the user to refresh", () => {
   );
 });
 
+test("non-retryable business conflicts retain refresh guidance", () => {
+  for (const operation of ["request", "accept", "cancel", "complete", "meetup"]) {
+    assert.equal(
+      mapReservationError(operation, { code: "PT409" }),
+      mapReservationError(operation, { code: "40001" }),
+    );
+    assert.match(mapReservationError(operation, { code: "PT409" }), /changed/i);
+  }
+});
+
 test("unknown database details are never exposed", () => {
   const secret = "duplicate key value reveals private-row@example.test";
   const result = mapReservationError("meetup", {

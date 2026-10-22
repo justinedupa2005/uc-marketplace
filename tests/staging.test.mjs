@@ -72,10 +72,10 @@ test("staging API pins HTTPS target, rejects redirects, bounds time and withhold
 });
 test("staging migration plan detects edits, unknown history and out-of-order changes", async () => {
   const migrations = await loadMigrations();
-  assert.equal(migrations.length, 18);
-  assert.equal(planMigrations(migrations, []).length, 18);
+  assert.equal(migrations.length, 20);
+  assert.equal(planMigrations(migrations, []).length, 20);
   const first = { version: migrations[0].version, checksum: migrations[0].checksum };
-  assert.equal(planMigrations(migrations, [first]).length, 17);
+  assert.equal(planMigrations(migrations, [first]).length, 19);
   assert.throws(() => planMigrations(migrations, [{ ...first, checksum: "wrong" }]), /drift/);
   assert.throws(() => planMigrations(migrations, [{ version: "19000101000000", checksum: "a" }]), /drift/);
   assert.throws(() => planMigrations(migrations, [migrations[1]]), /Out-of-order/);

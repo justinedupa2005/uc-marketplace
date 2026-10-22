@@ -264,7 +264,7 @@ export async function updateListing(
     logEditFailure("database-update", updateError?.code);
     await removeObjects(supabase, uploadedPaths);
     return state(
-      updateError?.code === "40001"
+      ["PT409", "40001"].includes(updateError?.code ?? "")
         ? "This listing changed while you were editing. Refresh and review the latest version."
         : "Unable to update your listing. Please try again.",
     );
