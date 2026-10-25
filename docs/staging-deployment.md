@@ -100,6 +100,19 @@ finds **20 applied / 0 pending** migrations. The actual schema audit has **0**
 missing, unexpected or changed objects and passes **129** native security
 assertions. Deployment and hosted browser acceptance are not yet certified.
 
+The first staging PR CI correctly refused the old dependency lockfile: npm
+reported three Next.js advisories (two critical, one high) affecting 16.3.8 and
+a high Zod advisory affecting 4.4.3. Next.js and its paired ESLint config are now
+pinned to **16.4.3**, and Zod to **4.6.7**. A fresh full/production audit passes
+with **0 findings** and no development exception. No security check was removed
+or bypassed. See the dated [dependency review](ci-dependency-security.md).
+
+HTTPS deployment review also found SDK cookies lacked an explicit Secure flag.
+Browser Auth, writable SSR and session-refresh proxy now share Secure cookies on
+HTTPS, host-only scope and SameSite=Lax. HTTP loopback remains usable; HttpOnly
+is retained for the separate recovery grant, not imposed on SDK cookies needed
+by browser Auth/Realtime. A real SDK cookie-write regression covers the change.
+
 References: [Next.js deployment](https://nextjs.org/docs/app/getting-started/deploying),
 [Vercel Git configuration](https://vercel.com/docs/project-configuration/git-configuration),
 [Vercel Git branch tracking](https://vercel.com/docs/git),

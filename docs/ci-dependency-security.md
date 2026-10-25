@@ -1,5 +1,31 @@
 # Step 2: CI and dependency security
 
+## Staging deployment follow-up: 2026-10-25
+
+The historical October 20 review below is not the current audit result. During
+Step 7, PR #3's dependency gate blocked deployment because the old lockfile had
+production findings in Next.js 16.3.8 and Zod 4.4.3. The Next.js findings were
+[image optimization RCE](https://github.com/advisories/GHSA-2464-fhr4-w9xw),
+[Server Actions DoS](https://github.com/advisories/GHSA-p3m5-59mp-jv5r), and
+[`use cache` typed-array RCE](https://github.com/advisories/GHSA-673q-mjm6-r5xr).
+Zod was affected by [oversized collection memory exhaustion](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5).
+
+Both Next.js and `eslint-config-next` are now pinned to **16.4.3**, within the
+existing major, and Zod to **4.6.7**. The lockfile update is limited to
+these packages and their corresponding Next.js platform/plugin packages; React,
+Supabase and unrelated dependencies are unchanged. npm install ran without
+dependency lifecycle scripts. The supported Node engine remains >=20.9.0; local
+and CI use Node 22. No `audit fix --force`, incompatible downgrade or broad
+override was used.
+
+Fresh `npm run qa:dependencies` reports `status=passed`, **0 production findings**
+and **0 deferred development packages**. Full and production-only npm audits are
+both clean; the old expiring development exception below is not being used.
+Passing exact-commit CI and hosting/browser checks are still required before
+deployment; this audit alone does not approve production.
+
+## Historical review
+
 Reviewed on **2026-10-20 (Asia/Manila)**. This records repository security and
 the exact-commit release gate; it is not deployment or launch approval.
 
