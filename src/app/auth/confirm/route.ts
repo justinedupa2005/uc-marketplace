@@ -1,41 +1,40 @@
-import type { EmailOtpType } from "@supabase/supabase-js";
 import { type NextRequest, NextResponse } from "next/server";
 
+import { parseConfirmationCallback } from "@/lib/auth/confirmation-callback";
 import { hasRecoveryAuthenticationMethod } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
-  const tokenHash = request.nextUrl.searchParams.get("token_hash");
-  const requestedType = request.nextUrl.searchParams.get("type");
-  const code = request.nextUrl.searchParams.get("code");
+  const callback = parseConfirmationCallback(request.nextUrl.searchParams);
   const supabase = await createClient();
   let verified = false;
   let sessionEstablished = false;
-
-  const type: EmailOtpType | null =
-    requestedType === "email" || requestedType === "signup"
-      ? requestedType
-      : null;
+  let pendingEmailChange = false;
+  let exchangeUserId: string | null = null;
 
   try {
-    if (tokenHash && type) {
-      const { error } = await supabase.auth.verifyOtp({
-        token_hash: tokenHash,
-        type,
+    if (callback?.kind === "token_hash") {
+      const { data, error } = await supabase.auth.verifyOtp({
+        token_hash: callback.tokenHash,
+        type: callback.type,
       });
-      verified = !error;
-      sessionEstablished = !error;
-    } else if (code) {
-      const { error } = await supabase.auth.exchangeCodeForSession(code);
-      verified = !error;
-      sessionEstablished = !error;
+      pendingEmailChange = !error && callback.type === "email_change" && !data.session;
+      verified = !error && Boolean(data.user && data.session);
+      sessionEstablished = verified;
+      exchangeUserId = verified ? data.user!.id : null;
+    } else if (callback?.kind === "pkce") {
+      const { data, error } = await supabase.auth.exchangeCodeForSession(callback.code,
+        callback.flowId ? { flowId: callback.flowId } : undefined);
+      verified = !error && Boolean(data.user && data.session);
+      sessionEstablished = verified;
+      exchangeUserId = verified ? data.user!.id : null;
     }
 
     if (verified) {
       const { data, error } = await supabase.auth.getClaims();
       verified = Boolean(
         !error &&
-          data?.claims?.sub &&
+          data?.claims?.sub === exchangeUserId &&
           !hasRecoveryAuthenticationMethod(data.claims),
       );
     }
@@ -58,8 +57,17 @@ export async function GET(request: NextRequest) {
   // normalize 127.0.0.1 to localhost even for a same-origin callback.
   const response = new NextResponse(null, {
     status: 307,
-    headers: { Location: `/login?confirmation=${verified ? "success" : "failed"}` },
+    headers: { Location: `/login?confirmation=${pendingEmailChange ? "pending" : verified ? "success" : "failed"}` },
   });
   response.headers.set("Cache-Control", "private, no-store, max-age=0");
+  response.headers.set("Referrer-Policy", "no-referrer");
+  response.headers.set("X-Robots-Tag", "noindex, nofollow");
   return response;
+}
+
+// Next otherwise implements HEAD by executing GET, consuming one-use tokens.
+export function HEAD() {
+  return new NextResponse(null, { status: 405, headers: { Allow: "GET",
+    "Cache-Control": "private, no-store, max-age=0", "Referrer-Policy": "no-referrer",
+    "X-Robots-Tag": "noindex, nofollow" } });
 }

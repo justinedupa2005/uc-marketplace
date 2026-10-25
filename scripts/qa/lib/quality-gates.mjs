@@ -14,8 +14,11 @@ export const LOCAL_QUALITY_GATES = Object.freeze([
   // as the regression/database gates instead of treating slow I/O as a failure.
   gate("lint", "ESLint validation", ["node_modules/eslint/bin/eslint.js"], 180_000),
   gate("unit", "Regression tests", [
-    "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--test", "--experimental-strip-types", "tests/*.test.mjs",
-  ], 180_000),
+    "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--test", "--test-concurrency=1", "--experimental-strip-types", "tests/*.test.mjs",
+  // A measured cold Windows run passed all 410 tests in 202 seconds. Allow
+  // the serialized aggregate five minutes; individual test limits/assertions
+  // remain unchanged and no test is filtered or skipped.
+  ], 300_000),
   gate("database", "Embedded database assertions", ["scripts/qa/database.mjs"], 180_000),
   gate("source", "Source security checks", ["scripts/qa/security-hygiene.mjs"], 120_000),
 ]);

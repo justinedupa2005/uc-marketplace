@@ -112,7 +112,7 @@ export function parseRecoveryCallback(parameters: URLSearchParams): RecoveryCall
   if ([...parameters.keys()].some((key) => parameters.getAll(key).length !== 1)) return null;
   // `token` belongs to Auth's verification endpoint, never this app callback.
   // Ignoring it beside a code/hash would leave ambiguous recovery provenance.
-  if (parameters.has("token")) return null;
+  if (["token", "error", "error_code", "error_description"].some((key) => parameters.has(key))) return null;
   const type = parameters.get("type");
   if (type !== null && type !== "recovery") return null;
   const hasToken = parameters.has("token_hash");

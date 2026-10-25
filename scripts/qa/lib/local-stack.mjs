@@ -37,7 +37,6 @@ export function buildLocalQaConfig(source, projectId) {
     ["storage.vector", "enabled", "false"],
   ];
   for (const [section, name, value] of overrides) config = setTomlValue(config, section, name, value);
-  config += '\n[auth.email.template.recovery]\nsubject = "Disposable UC Marketplace QA password recovery"\ncontent_path = "./supabase/templates/recovery.html"\n';
   return config;
 }
 

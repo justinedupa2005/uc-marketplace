@@ -102,8 +102,9 @@ try {
   await mkdir(path.join(supabase, "migrations"), { recursive: true });
   await mkdir(path.join(supabase, "templates"));
   await writeFile(path.join(supabase, "config.toml"), buildLocalQaConfig(await readFile(path.join(root, "supabase/config.toml"), "utf8"), projectId), { flag: "wx" });
-  await writeFile(path.join(supabase, "templates/confirmation.html"), await readFile(path.join(root, "supabase/templates/confirmation.html")), { flag: "wx" });
-  await writeFile(path.join(supabase, "templates/recovery.html"), '<!doctype html><html lang="en"><body><h1>Disposable QA password recovery</h1><p>{{ .Token }}</p><a href="{{ .SiteURL }}/auth/recovery?token_hash={{ .TokenHash }}&amp;type=recovery">Reset password</a></body></html>', { flag: "wx" });
+  for (const template of ["confirmation.html", "recovery.html", "email-change.html", "reauthentication.html"]) {
+    await writeFile(path.join(supabase, "templates", template), await readFile(path.join(root, "supabase/templates", template)), { flag: "wx" });
+  }
   for (const file of (await readdir(path.join(root, "supabase/migrations"))).filter((name) => /^\d{14}_[a-z0-9_]+\.sql$/.test(name)).sort()) {
     interrupts.throwIfInterrupted();
     await writeFile(path.join(supabase, "migrations", file), await readFile(path.join(root, "supabase/migrations", file)), { flag: "wx" });

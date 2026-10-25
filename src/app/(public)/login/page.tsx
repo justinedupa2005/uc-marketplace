@@ -93,6 +93,11 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       variant: "success",
       message: "Your email has been confirmed. You can now log in.",
     };
+  } else if (confirmation === "pending") {
+    notification = {
+      variant: "success",
+      message: "This address is confirmed. Check your other email inbox to finish the email address change.",
+    };
   } else if (confirmation === "failed") {
     notification = {
       variant: "error",

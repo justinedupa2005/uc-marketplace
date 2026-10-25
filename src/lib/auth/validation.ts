@@ -1,9 +1,9 @@
 import { z } from "zod";
 
 import { isAcceptedCourse } from "@/lib/auth/options";
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PASSWORD_SYMBOLS } from "./password-policy.mjs";
 
-export const PASSWORD_MIN_LENGTH = 12;
-export const PASSWORD_MAX_LENGTH = 256;
+export { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH };
 
 export const passwordSchema = z
   .string()
@@ -15,7 +15,8 @@ export const passwordSchema = z
   .regex(/[a-z]/, "Password must include a lowercase letter.")
   .regex(/[A-Z]/, "Password must include an uppercase letter.")
   .regex(/[0-9]/, "Password must include a number.")
-  .regex(/[^A-Za-z0-9]/, "Password must include a symbol.");
+  .refine((value) => [...value].some((character) => PASSWORD_SYMBOLS.includes(character)),
+    "Password must include a supported symbol, not just whitespace.");
 
 export const registrationSchema = z
   .object({

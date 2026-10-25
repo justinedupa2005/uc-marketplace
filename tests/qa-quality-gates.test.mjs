@@ -16,7 +16,7 @@ test("local quality gates are frozen repository-owned Node arguments without exe
     ["node_modules/next/dist/bin/next", "typegen"],
     ["node_modules/typescript/bin/tsc", "--noEmit"],
     ["node_modules/eslint/bin/eslint.js"],
-    ["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--test", "--experimental-strip-types", "tests/*.test.mjs"],
+    ["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--test", "--test-concurrency=1", "--experimental-strip-types", "tests/*.test.mjs"],
     ["scripts/qa/database.mjs"],
     ["scripts/qa/security-hygiene.mjs"],
   ]);
@@ -25,7 +25,8 @@ test("local quality gates are frozen repository-owned Node arguments without exe
     assert.equal(Object.isFrozen(gate.args), true);
     assert.deepEqual(Object.keys(gate), ["id", "label", "args", "timeoutMs"]);
     assert.match(gate.label, /^[A-Za-z ]+$/);
-    assert.ok(gate.timeoutMs >= 120_000 && gate.timeoutMs <= 180_000);
+    assert.ok(gate.timeoutMs >= 120_000 && gate.timeoutMs <= (gate.id === "unit" ? 300_000 : 180_000));
+    if (gate.id === "unit") assert.equal(gate.timeoutMs, 300_000);
     assert.throws(() => { gate.args.push("--require=untrusted.js"); }, TypeError);
     assert.throws(() => { gate.cwd = "outside-workspace"; }, TypeError);
   }

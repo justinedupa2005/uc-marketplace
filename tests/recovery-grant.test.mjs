@@ -22,8 +22,8 @@ registerHooks({
 
 const grants = await import("../src/lib/auth/recovery-grant.ts");
 const guards = await import("../src/lib/auth/server.ts");
-const { GET } = await import("../src/app/auth/recovery/route.ts");
-const { GET: confirmEmail } = await import("../src/app/auth/confirm/route.ts");
+const { GET, HEAD: recoveryHead } = await import("../src/app/auth/recovery/route.ts");
+const { GET: confirmEmail, HEAD: confirmationHead } = await import("../src/app/auth/confirm/route.ts");
 const userId = "11111111-1111-4111-8111-111111111111";
 const sessionId = "22222222-2222-4222-8222-222222222222";
 const otherId = "33333333-3333-4333-8333-333333333333";
@@ -113,7 +113,7 @@ test("direct OTP callback provenance permits OTP claims while PKCE still strictl
   assert.equal(guards.hasRecoveryAuthenticationMethod(claims("recovery")), true);
 });
 
-function installFixture({ marker, method = "otp", authError = null, claimPatch = {}, liveUserId = userId, exchangeUserId = userId, exchangeError = null, exchangeThrows = false, signOutError = null } = {}) {
+function installFixture({ marker, method = "otp", authError = null, claimPatch = {}, liveUserId = userId, exchangeUserId = userId, exchangeError = null, exchangeThrows = false, signOutError = null, emptySession = false } = {}) {
   const calls = [];
   const values = new Map(marker ? [[guards.RECOVERY_COOKIE_NAME, marker]] : []);
   const fixture = {
@@ -124,7 +124,7 @@ function installFixture({ marker, method = "otp", authError = null, claimPatch =
       delete(name) { calls.push(["delete", name]); values.delete(name); },
     },
     supabase: { auth: {
-      async verifyOtp(parameters) { calls.push(["verifyOtp", parameters]); if (exchangeThrows) throw new Error("private token response"); return { data: { user: { id: exchangeUserId }, session: {} }, error: exchangeError }; },
+      async verifyOtp(parameters) { calls.push(["verifyOtp", parameters]); if (exchangeThrows) throw new Error("private token response"); return { data: { user: emptySession ? null : { id: exchangeUserId }, session: emptySession ? null : {} }, error: exchangeError }; },
       async exchangeCodeForSession(code, options) { calls.push(["exchangeCodeForSession", code, options]); return { data: { user: { id: exchangeUserId }, session: {} }, error: exchangeError }; },
       async getClaims() { calls.push(["getClaims"]); return { data: { claims: claims(method, claimPatch) }, error: authError }; },
       async getUser() { calls.push(["getUser"]); return { data: { user: liveUserId ? { id: liveUserId } : null }, error: authError }; },
@@ -323,4 +323,64 @@ test("confirmation errors, recovery claims and signout failure retain a fixed sa
   const response = await confirmEmail(request(`token_hash=${"a".repeat(64)}&type=recovery`, "http://127.0.0.1:3106", "/auth/confirm"));
   assert.equal(response.headers.get("location"), "/login?confirmation=failed");
   assert.equal(fixture.calls.some(([name]) => ["verifyOtp", "exchangeCodeForSession", "getClaims", "set"].includes(name)), false);
+});
+
+test("confirmation rejects duplicate, mixed, malformed and error-bearing callback credentials before Auth", async () => {
+  const hash = "a".repeat(64);
+  for (const query of [`token_hash=${hash}&type=email&code=code`, `token_hash=${hash}&type=email&type=signup`,
+    `token_hash=${hash}&type=email&token=other`, `token_hash=${hash}&type=email&error=expired`,
+    "code=one&code=two", "code=code&type=recovery", "code=code&error_code=otp_expired", "code=code%0A", "token_hash=short&type=email", ""]) {
+    const fixture = installFixture();
+    const response = await confirmEmail(request(query, undefined, "/auth/confirm"));
+    assert.equal(response.headers.get("location"), "/login?confirmation=failed");
+    assert.deepEqual(fixture.calls, []);
+  }
+});
+
+test("both callback HEAD handlers never consume one-use tokens or create sessions", () => {
+  for (const operation of [confirmationHead, recoveryHead]) {
+    const fixture = installFixture();
+    const response = operation();
+    assert.equal(response.status, 405);
+    assert.equal(response.headers.get("allow"), "GET");
+    assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+    assert.equal(response.headers.get("x-robots-tag"), "noindex, nofollow");
+    assert.deepEqual(fixture.calls, []);
+  }
+});
+
+test("error-bearing recovery callbacks cannot consume credentials or mint grants", async () => {
+  await withSecret(secret, async () => {
+    for (const parameter of ["error", "error_code", "error_description"]) {
+      const fixture = installFixture();
+      const response = await GET(request(`token_hash=${"a".repeat(64)}&type=recovery&${parameter}=expired`));
+      assert.match(response.headers.get("location"), /error=invalid$/);
+      assert.deepEqual(fixture.calls, []);
+      assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+    }
+  });
+});
+
+test("typed email-change confirmation does not mint recovery privileges", async () => {
+  const fixture = installFixture();
+  const response = await confirmEmail(request(`token_hash=${"a".repeat(64)}&type=email_change`, undefined, "/auth/confirm"));
+  assert.equal(response.headers.get("location"), "/login?confirmation=success");
+  assert.equal(fixture.calls[0][1].type, "email_change");
+  assert.equal(fixture.calls.some(([name]) => name === "set"), false);
+});
+
+test("first secure email-change confirmation waits for the other inbox without touching an existing session", async () => {
+  const fixture = installFixture({ emptySession: true });
+  const response = await confirmEmail(request(`token_hash=${"a".repeat(64)}&type=email_change`, undefined, "/auth/confirm"));
+  assert.equal(response.headers.get("location"), "/login?confirmation=pending");
+  assert.deepEqual(fixture.calls.map(([name]) => name), ["verifyOtp"]);
+});
+
+test("confirmation cannot report success for a missing session or mismatched exchange user", async () => {
+  for (const patch of [{ emptySession: true }, { exchangeUserId: otherId }]) {
+    const fixture = installFixture(patch);
+    const response = await confirmEmail(request(`token_hash=${"a".repeat(64)}&type=email`, undefined, "/auth/confirm"));
+    assert.equal(response.headers.get("location"), "/login?confirmation=failed");
+    assert.equal(fixture.calls.some(([name]) => name === "set"), false);
+  }
 });

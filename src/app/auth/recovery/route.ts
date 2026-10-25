@@ -84,5 +84,13 @@ export async function GET(request: NextRequest) {
     headers: { Location: marker ? "/reset-password" : "/reset-password?error=invalid" },
   });
   response.headers.set("Cache-Control", "private, no-store, max-age=0");
+  response.headers.set("Referrer-Policy", "no-referrer");
+  response.headers.set("X-Robots-Tag", "noindex, nofollow");
   return response;
+}
+
+export function HEAD() {
+  return new NextResponse(null, { status: 405, headers: { Allow: "GET",
+    "Cache-Control": "private, no-store, max-age=0", "Referrer-Policy": "no-referrer",
+    "X-Robots-Tag": "noindex, nofollow" } });
 }

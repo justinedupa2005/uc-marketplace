@@ -6,6 +6,8 @@
     "dev": "next dev",
     "env:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/deployment/check.mjs",
     "env:local": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/deployment/local.mjs",
+    "auth:plan": "node scripts/auth/configure.mjs plan",
+    "auth:configure": "node scripts/auth/configure.mjs apply",
     "build": "next build",
     "check": "npm run typecheck && npm run lint && npm test",
     "db:types": "node scripts/staging/types.mjs --write",
