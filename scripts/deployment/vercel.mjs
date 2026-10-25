@@ -31,7 +31,7 @@ export function validateProductionPreparation(variables) {
     || variables.EMAIL_CONFIRMATION_MODE !== "link" || !isStrongRecoverySecret(variables.AUTH_RECOVERY_SECRET)) throw new Error("Invalid blocked production preparation.");
 }
 
-function api(endpoint, method = "GET", body) {
+export function vercelApi(endpoint, method = "GET", body) {
   // CLI credentials remain in its existing credential store. No shell, token
   // arguments, environment dumps, persisted API responses or raw child output.
   const entry = path.join(process.env.APPDATA ?? "", "npm/node_modules/vercel/dist/index.js");
@@ -47,6 +47,7 @@ function api(endpoint, method = "GET", body) {
   }
   return JSON.parse(result.stdout);
 }
+const api = vercelApi;
 
 async function main() {
   const [command, mode] = process.argv.slice(2);

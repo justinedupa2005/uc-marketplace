@@ -33,6 +33,10 @@ managed Supabase email templates and guarded Auth configuration/read-back tools.
 Staging and production policies/templates are configured; external delivery and
 hosted end-to-end acceptance remain pending. No production deployment is enabled.
 
+Step 7 adds [protected staging deployment](docs/staging-deployment.md), exact-commit
+CI/hosting/database guards and a separate staging-only browser smoke. Automatic
+Git deployments remain off; the production release block is unchanged.
+
 The app uses the existing `NEXT_PUBLIC_APP_URL` and
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` names; do not add URL/key aliases.
 Database setup, migration, and security-check instructions live in

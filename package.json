@@ -33,7 +33,9 @@
     "staging:plan": "node scripts/staging/migrate.mjs --plan",
     "staging:migrate": "node scripts/staging/migrate.mjs --apply",
     "staging:seed": "node scripts/staging/seed.mjs",
-    "staging:verify": "node scripts/staging/verify.mjs"
+    "staging:verify": "node scripts/staging/verify.mjs",
+    "staging:hosting": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/deployment/staging.mjs",
+    "staging:hosting:smoke": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/deployment/staging-smoke.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",
