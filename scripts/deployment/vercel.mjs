@@ -32,6 +32,21 @@ export function validateProductionPreparation(variables) {
 }
 
 export function vercelApi(endpoint, method = "GET", body) {
+  if (method !== "GET") {
+    const result = spawnSync(process.execPath, [path.join(root, "scripts/deployment/vercel-write.mjs")], {
+      input: JSON.stringify({ endpoint, method, body }), encoding: "utf8", windowsHide: true, timeout: 45_000, maxBuffer: 4_000_000,
+    });
+    let response;
+    try { response = JSON.parse(result.stdout); } catch { /* No raw child output. */ }
+    if (result.error || result.status !== 0 || !response?.ok) {
+      console.log(JSON.stringify({ transport: "vercel-single-request", completed: false,
+        status: Number.isInteger(response?.status) ? response.status : null,
+        requiredAction: ["Install GitHub App", "Add a Login Connection"].includes(response?.requiredAction) ? response.requiredAction : null,
+        automaticRetry: false }));
+      throw new Error("Vercel write incomplete; inspect provider state before retrying.");
+    }
+    return response.data;
+  }
   // CLI credentials remain in its existing credential store. No shell, token
   // arguments, environment dumps, persisted API responses or raw child output.
   const entry = path.join(process.env.APPDATA ?? "", "npm/node_modules/vercel/dist/index.js");
