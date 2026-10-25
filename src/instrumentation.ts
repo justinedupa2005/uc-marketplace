@@ -1,5 +1,5 @@
-import { validateDeploymentEnvironment } from "@/lib/deployment-environment";
+import { assertDeploymentEnabled, validateDeploymentEnvironment } from "@/lib/deployment-environment";
 
 export function register() {
-  validateDeploymentEnvironment(process.env);
+  assertDeploymentEnabled(validateDeploymentEnvironment(process.env).mode);
 }

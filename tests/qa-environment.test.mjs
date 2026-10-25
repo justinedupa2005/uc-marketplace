@@ -84,6 +84,7 @@ test("privileged QA secrets are excluded from Next.js build and server environme
   const env = getQaAppEnvironment(validateQaEnvironment(local), { ...local, QA_BUYER_PASSWORD: "test-only", SUPABASE_SERVICE_ROLE_KEY: "test-only", DATABASE_PASSWORD: "test-only", AUTH_SECRET: "test-only", DB_PASS: "test-only", PGUSER: "test-only", SUPABASE_ACCESS_TOKEN: "test-only", OPENAI_API_KEY: "test-only", NEXT_PUBLIC_APP_URL: "https://production.example.test", NODE_ENV: "development", PATH: "retained" });
   assert.equal(env.PATH, "retained");
   assert.equal(env.NODE_ENV, "production");
+  assert.equal(env.APP_ENV, "local");
   assert.equal(env.NEXT_PUBLIC_SUPABASE_URL, local.QA_SUPABASE_URL);
   assert.equal(env.NEXT_PUBLIC_APP_URL, "http://127.0.0.1:3106");
   for (const name of ["QA_SUPABASE_SERVICE_ROLE_KEY", "QA_BUYER_PASSWORD", "SUPABASE_SERVICE_ROLE_KEY", "DATABASE_PASSWORD", "AUTH_SECRET", "DB_PASS", "PGUSER", "SUPABASE_ACCESS_TOKEN", "OPENAI_API_KEY", "QA_DATABASE_URL"]) assert.equal(env[name], undefined);
@@ -107,6 +108,15 @@ test("dotenv preflight finds privileged assignment names without returning value
   ].join("\r\n"));
   assert.deepEqual(names, ["SUPABASE_SERVICE_ROLE_KEY", "AUTH_SECRET", "DB_PASS", "SUPABASE_ACCESS_TOKEN", "OPENAI_API_KEY", "POSTGRES_CONNECTION_STRING", "PRIVATE_KEY"]);
   assert.equal(JSON.stringify(names).includes(value), false);
+});
+
+test("dotenv permits only the application recovery secret, never similarly named fixture secrets", () => {
+  assert.deepEqual(getPrivilegedDotenvNames("AUTH_RECOVERY_SECRET=app-key\nSTAGING_AUTH_RECOVERY_SECRET=operator-key\nQA_RECOVERY_SECRET=fixture-key"),
+    ["STAGING_AUTH_RECOVERY_SECRET", "QA_RECOVERY_SECRET"]);
+  const config = { ...validateQaEnvironment(local), recoverySecret: "run-owned-key" };
+  const app = getQaAppEnvironment(config, { AUTH_RECOVERY_SECRET: "local-key" });
+  assert.equal(app.AUTH_RECOVERY_SECRET, "run-owned-key");
+  assert.equal(getQaBrowserEnvironment(config, app).AUTH_RECOVERY_SECRET, undefined);
 });
 
 test("dotenv preflight rejects all production-loaded files with credential-safe diagnostics", async () => {

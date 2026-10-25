@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { randomBytes } from "node:crypto";
 import { validateDeploymentEnvironment } from "../src/lib/deployment-environment.ts";
 import robots from "../src/app/robots.ts";
 import { createManagementApi, fixtureStoragePaths, loadMigrations, migrationQuery, planMigrations, registry, staging, validateFixtureCredentials, validateStagingTarget, verifyStagingProject } from "../scripts/staging/lib.mjs";
 
 const operator = { STAGING_PROJECT_REF: staging.supabaseProjectRef, STAGING_ALLOW_MUTATIONS: "1", STAGING_MANAGEMENT_TOKEN: "private-test-token" };
 const application = { APP_ENV: "staging", NEXT_PUBLIC_SUPABASE_URL: `https://${staging.supabaseProjectRef}.supabase.co`,
-  NEXT_PUBLIC_APP_URL: staging.appOrigin, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test", AUTH_RECOVERY_SECRET: "a1".repeat(32) };
+  NEXT_PUBLIC_APP_URL: staging.appOrigin, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: `sb_publishable_${randomBytes(24).toString("base64url")}`, AUTH_RECOVERY_SECRET: randomBytes(32).toString("hex"), EMAIL_CONFIRMATION_MODE: "code" };
 
 test("staging build and startup refuse production, deceptive and incomplete targets", () => {
   assert.equal(validateDeploymentEnvironment(application).mode, "staging");
@@ -36,7 +37,7 @@ test("staging crawlers are blocked without changing public production homepage i
     assert.ok(!robots().rules.disallow.includes("/"));
     assert.equal(validateDeploymentEnvironment({ ...application, APP_ENV: "production",
       NEXT_PUBLIC_SUPABASE_URL: `https://${registry.production.supabaseProjectRef}.supabase.co`,
-      NEXT_PUBLIC_APP_URL: "https://production.example.test" }).noIndex, false);
+      NEXT_PUBLIC_APP_URL: registry.production.appOrigin }).noIndex, false);
   } finally {
     if (previous === undefined) delete process.env.APP_ENV;
     else process.env.APP_ENV = previous;

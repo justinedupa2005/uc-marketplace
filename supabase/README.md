@@ -17,6 +17,11 @@ actual schema/grant drift detection, hosted RLS/Storage/API acceptance, reviewed
 messaging publication and generated staging types. Use that guide instead of
 the historical linked-project/staged-file deployment instructions below.
 
+Step 5 adds [deployment environment configuration](../docs/deployment-environment.md):
+loopback-only local setup, isolated hosted variable scopes, persistent write-only
+recovery Secrets, build/startup guards, and controlled rotation. Production remains
+inactive and deployment-disabled by the owner's choice; its app public key is unset.
+
 ## Migrations
 
 Apply migrations in filename order:

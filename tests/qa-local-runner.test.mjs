@@ -41,6 +41,8 @@ test("Docker PATH repair is confined to a copied child environment", () => {
 });
 
 test("all local quality gates complete before the disposable stack is created", () => {
+  assert.match(source, /publishableKey: "sb_publishable_ucmarketplace_anonymous_ci"/);
+  assert.match(source, /recoverySecret: randomBytes\(32\)\.toString\("hex"\)/);
   ordered(
     "for (const gate of LOCAL_QUALITY_GATES)",
     "runQuiet(process.execPath, gate.args, gate.label",

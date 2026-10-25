@@ -1,7 +1,10 @@
 import { loadEnvConfig } from "@next/env";
 import { defineConfig, devices } from "@playwright/test";
 
-loadEnvConfig(process.cwd());
+// Explicit isolated QA already supplies its public/fixture environment. Loading
+// the developer's dotenv here would reintroduce its private recovery secret
+// after the launcher deliberately removed it from browser workers.
+if (!process.env.QA_APP_BASE_URL) loadEnvConfig(process.cwd());
 
 const baseURL = process.env.QA_APP_BASE_URL ?? "http://127.0.0.1:3100";
 const target = new URL(baseURL);

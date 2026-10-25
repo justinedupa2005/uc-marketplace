@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
-import { validateDeploymentEnvironment } from "./src/lib/deployment-environment";
+import { assertDeploymentEnabled, validateDeploymentEnvironment } from "./src/lib/deployment-environment";
 
 const deployment = validateDeploymentEnvironment(process.env);
+assertDeploymentEnabled(deployment.mode);
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseSource = supabaseUrl ? new URL(supabaseUrl) : null;

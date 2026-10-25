@@ -60,7 +60,7 @@ test("integration emits only controlled phase metadata around every acceptance g
   assert.match(source, /QA_PHASE_JSON:\$\{JSON\.stringify\(progress\)\}/);
 });
 
-test("full browser acceptance explicitly executes both projects with public-only worker configuration", () => {
+test("full browser acceptance explicitly executes both projects with public-only worker configuration", async () => {
   assert.match(source, /await runNode\(\["node_modules\/@playwright\/test\/cli\.js", "test", "--project=anonymous-chromium", "--project=qa-chromium", "--forbid-only"\]/);
   ordered(
     'setPhase("browser")',
@@ -71,6 +71,8 @@ test("full browser acceptance explicitly executes both projects with public-only
   );
   const browserConfiguration = source.slice(position("...getQaBrowserEnvironment(config)"), position("const reportPath ="));
   assert.doesNotMatch(browserConfiguration, /SERVICE_ROLE_KEY|AUTH_RECOVERY_SECRET|QA_DATABASE_URL|storageState|trace:|screenshot:|video:/);
+  const playwrightConfiguration = await readFile(new URL("../playwright.config.ts", import.meta.url), "utf8");
+  assert.match(playwrightConfiguration, /if \(!process\.env\.QA_APP_BASE_URL\) loadEnvConfig\(process\.cwd\(\)\)/);
 });
 
 test("full browser acceptance forbids focused tests without depending on CI or test filters", () => {

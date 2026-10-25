@@ -17,7 +17,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const projectId = `ucmarketplace-qa-${randomBytes(8).toString("hex")}`;
 let cliPath;
 let dockerPath;
-const baseEnvironment = getQaAppEnvironment({ supabaseUrl: "http://127.0.0.1:54331", publishableKey: "", appBaseUrl: "http://127.0.0.1:3106" });
+const baseEnvironment = getQaAppEnvironment({ supabaseUrl: "http://127.0.0.1:54331",
+  publishableKey: "sb_publishable_ucmarketplace_anonymous_ci", appBaseUrl: "http://127.0.0.1:3106",
+  recoverySecret: randomBytes(32).toString("hex") });
 // The CLI must not inherit an executable override, linked credentials or flags.
 const cliEnvironment = Object.fromEntries(Object.entries(baseEnvironment).filter(([name]) => !/^SUPABASE_|^QA_/.test(name)));
 Object.assign(cliEnvironment, { SUPABASE_TELEMETRY_DISABLED: "1", DO_NOT_TRACK: "1" });

@@ -13,7 +13,23 @@ npm.cmd install
 npm.cmd run dev
 ```
 
-The app expects the public Supabase URL and publishable key in `.env.local`.
+With Docker running, `npm.cmd run env:local -- --start` starts the local-only
+Supabase development stack and configures ignored `.env.local` from its status.
+It preserves the local recovery secret on repeat runs and retains a private
+backup before replacing an existing configuration. Run `npm.cmd run env:check`
+before building or starting the app. This checks production-mode dotenv precedence,
+including for a local-target build; it does not select `APP_ENV=production`.
+Never use the protected hosted student project locally.
+See [deployment environment configuration](docs/deployment-environment.md) for
+the full local/staging/production variable inventory and recovery-secret rotation.
+
+Step 5 is **partially complete**: the owner deferred external SMTP setup on
+2026-10-25 so other preparation can continue. Production email authentication,
+delivery and end-to-end email flows remain pending. Production deployment stays
+disabled; email confirmation must not be bypassed to work around SMTP failures.
+
+The app uses the existing `NEXT_PUBLIC_APP_URL` and
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` names; do not add URL/key aliases.
 Database setup, migration, and security-check instructions live in
 [`supabase/README.md`](supabase/README.md).
 
@@ -25,6 +41,8 @@ npm.cmd run build
 ```
 
 `check` runs the TypeScript compiler, ESLint, and the unit-test suite.
+The test runner uses one worker so clean-checkout compiler and in-memory database
+fixtures do not compete for memory or exceed their unchanged time limits.
 
 Step 15 adds database authorization/workflow checks, browser tests, security
 boundary scans and an isolated authenticated QA runner. See
