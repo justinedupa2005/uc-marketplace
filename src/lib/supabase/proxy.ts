@@ -8,6 +8,7 @@ import {
 import { isAuthServiceUnavailable } from "@/lib/auth/errors";
 import type { Database } from "@/types/database";
 import { filterSupabaseSessionCookies } from "@/lib/supabase/session-cookies";
+import { authCookieOptions } from "@/lib/supabase/cookie-options";
 
 function redirectWithSessionCookies(
   request: NextRequest,
@@ -68,6 +69,7 @@ export async function updateSession(request: NextRequest) {
     supabaseUrl,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
+      cookieOptions: authCookieOptions(),
       cookies: {
         getAll() {
           return request.cookies.getAll();

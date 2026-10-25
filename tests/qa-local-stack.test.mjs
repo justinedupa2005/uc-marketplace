@@ -11,9 +11,10 @@ test("isolated config preserves strong auth and uses distinct, fresh per-run res
   const config = buildLocalQaConfig(source, id);
   assert.ok(config.includes(`project_id = "${id}"`));
   for (const port of [54330, 54331, 54332, 54333, 54334, 54337, 54339]) assert.ok(config.includes(String(port)));
-  for (const value of ["minimum_password_length = 12", 'password_requirements = "lower_upper_letters_digits_symbols"', "enable_confirmations = true", "otp_length = 8", "otp_expiry = 60", 'max_frequency = "60s"', "email_sent = 100"]) assert.ok(config.includes(value));
+  for (const value of ["minimum_password_length = 12", 'password_requirements = "lower_upper_letters_digits_symbols"', "enable_confirmations = true", "secure_password_change = true", "otp_length = 8", "otp_expiry = 60", 'max_frequency = "60s"', "email_sent = 100"]) assert.ok(config.includes(value));
   assert.ok(config.includes('site_url = "http://127.0.0.1:3106"'));
   assert.ok(config.includes("[auth.email.template.recovery]"));
+  assert.equal(config.match(/^\[auth.email.template.recovery\]$/gm).length, 1);
   assert.ok(!config.includes('project_id = "UCMarketplace"'));
   assert.throws(() => buildLocalQaConfig(source, "UCMarketplace"), /uniquely/);
   assert.ok(config.length > 0);

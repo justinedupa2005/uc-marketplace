@@ -20,7 +20,7 @@ export type ForgotPasswordState = {
 };
 
 const GENERIC_SUCCESS_MESSAGE =
-  "If an account exists for that email address, a password reset link has been sent.";
+  "If an account exists for that email address, check your inbox for a password reset link. Wait before requesting another link.";
 
 export async function requestPasswordReset(
   _previousState: ForgotPasswordState,
@@ -50,41 +50,19 @@ export async function requestPasswordReset(
 
     if (error) {
       console.error("Supabase password reset request failed", {
-        code: error.code,
-        status: error.status,
+        code: typeof error.code === "string" && /^[a-z_]{1,40}$/.test(error.code) ? error.code : "service_error",
+        status: typeof error.status === "number" && Number.isInteger(error.status)
+          && error.status >= 0 && error.status <= 599 ? error.status : 0,
       });
-
-      if (
-        error.code === "over_request_rate_limit" ||
-        error.code === "over_email_send_rate_limit"
-      ) {
-        return {
-          status: "error",
-          message: "Too many requests. Please wait and try again later.",
-        };
-      }
-
-      if (
-        error.status === 0 ||
-        error.code === "request_timeout" ||
-        error.name === "AuthRetryableFetchError"
-      ) {
-        return {
-          status: "error",
-          message:
-            "Unable to reach the password reset service. Please try again.",
-        };
-      }
 
       // Keep the response indistinguishable for registered and unregistered
       // addresses. Operational details remain server-side only.
       return { status: "success", message: GENERIC_SUCCESS_MESSAGE };
     }
   } catch {
-    return {
-      status: "error",
-      message: "Unable to reach the password reset service. Please try again.",
-    };
+    // Provider throttles/outages can depend on whether an account exists.
+    // Valid email inputs always receive the same public response; never retry.
+    return { status: "success", message: GENERIC_SUCCESS_MESSAGE };
   }
 
   return { status: "success", message: GENERIC_SUCCESS_MESSAGE };

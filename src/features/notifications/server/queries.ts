@@ -36,7 +36,7 @@ export const getNotificationState = cache(async () => {
     const access = await getCurrentAccessContext();
     if (!access.user || !access.profile) return null;
     const { data, error } = await access.supabase
-      .rpc("get_my_notification_state", {})
+      .rpc("get_my_notification_state")
       .single();
     const count = Number(data?.unread_count);
     if (error || !data || !Number.isSafeInteger(count) || count < 0) {

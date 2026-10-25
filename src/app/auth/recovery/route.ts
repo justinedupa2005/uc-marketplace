@@ -57,9 +57,6 @@ export async function GET(request: NextRequest) {
   }
 
   const cookieStore = await cookies();
-  const redirectTo = request.nextUrl.clone();
-  redirectTo.pathname = "/reset-password";
-  redirectTo.search = "";
 
   if (marker) {
     cookieStore.set(RECOVERY_COOKIE_NAME, marker, {
@@ -78,11 +75,22 @@ export async function GET(request: NextRequest) {
         // The invalid-link screen remains safe even if Auth is unavailable.
       }
     }
-
-    redirectTo.searchParams.set("error", "invalid");
   }
 
-  const response = NextResponse.redirect(redirectTo);
+  // NextURL normalizes loopback hosts. A relative Location preserves the
+  // browser's origin and its host-only Auth cookies without trusting headers.
+  const response = new NextResponse(null, {
+    status: 307,
+    headers: { Location: marker ? "/reset-password" : "/reset-password?error=invalid" },
+  });
   response.headers.set("Cache-Control", "private, no-store, max-age=0");
+  response.headers.set("Referrer-Policy", "no-referrer");
+  response.headers.set("X-Robots-Tag", "noindex, nofollow");
   return response;
+}
+
+export function HEAD() {
+  return new NextResponse(null, { status: 405, headers: { Allow: "GET",
+    "Cache-Control": "private, no-store, max-age=0", "Referrer-Policy": "no-referrer",
+    "X-Robots-Tag": "noindex, nofollow" } });
 }

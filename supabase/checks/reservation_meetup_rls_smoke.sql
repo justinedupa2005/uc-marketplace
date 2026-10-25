@@ -596,7 +596,7 @@ select pg_temp.step11_expect_rejected(
      where label = 'complete_buyer_reservation'),
     'Stale edit without a version'
   ),
-  '40001'
+  'PT409'
 );
 
 select pg_temp.step11_expect_rejected(
@@ -609,7 +609,7 @@ select pg_temp.step11_expect_rejected(
     (select updated_at from pg_temp.step11_meetup_versions
      where label = 'before_edit')
   ),
-  '40001'
+  'PT409'
 );
 
 insert into pg_temp.step11_results

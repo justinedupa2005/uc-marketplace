@@ -8,7 +8,10 @@ const applicationDotenvFiles = [".env.production.local", ".env.local", ".env.pro
 /** Inspect assignment names only; never parse, expand, return or log values. */
 export function getPrivilegedDotenvNames(contents) {
   const names = [...contents.matchAll(/^[ \t]*(?:export[ \t]+)?([A-Za-z_][\w.-]*)[ \t]*(?:=|:[ \t]+)/gm)].map((match) => match[1]);
-  return [...new Set(names.filter((name) => privilegedConfigurationName.test(name)))];
+  // This one app-owned server secret is legitimate dotenv configuration. The
+  // runner still strips it from inherited env and supplies a fresh run-owned
+  // key; fixture/operator secrets and every other secret name stay forbidden.
+  return [...new Set(names.filter((name) => name !== "AUTH_RECOVERY_SECRET" && privilegedConfigurationName.test(name)))];
 }
 
 export async function assertQaDotenvSafety(root = process.cwd()) {
@@ -137,6 +140,7 @@ export function getQaAppEnvironment(config, env = process.env) {
   const safe = Object.fromEntries(Object.entries(env).filter(([name]) => !privilegedConfigurationName.test(name) && !/^QA_.*_(EMAIL|ID)$/.test(name)));
   return {
     ...safe,
+    APP_ENV: "local",
     NODE_ENV: "production",
     NEXT_PUBLIC_SUPABASE_URL: config.supabaseUrl,
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: config.publishableKey,

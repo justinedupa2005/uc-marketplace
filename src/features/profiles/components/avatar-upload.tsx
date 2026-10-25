@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field-error";
@@ -10,7 +10,10 @@ import { INITIAL_PROFILE_ACTION_STATE, ProfileFeedback } from "@/features/profil
 import { getAvatarFileError } from "@/features/profiles/rules";
 import type { ProfileActionState } from "@/features/profiles/types";
 
+const subscribeToHydration = () => () => {};
+
 export function AvatarUpload({ avatarUrl, fullName }: { avatarUrl: string | null; fullName: string | null }) {
+  const hasHydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
   const fileInput = useRef<HTMLInputElement>(null);
   const previewUrl = useRef<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -64,7 +67,7 @@ export function AvatarUpload({ avatarUrl, fullName }: { avatarUrl: string | null
           name="avatar"
           accept="image/jpeg,image/png,image/webp"
           required
-          disabled={pending}
+          disabled={pending || !hasHydrated}
           aria-invalid={Boolean(fileError || uploadState.fieldErrors?.avatar) || undefined}
           aria-describedby={fileError || uploadState.fieldErrors?.avatar ? "avatar-guidance avatar-error" : "avatar-guidance"}
           className="block w-full rounded-md border border-[#c4c5d5] p-3 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-[#e6eeff] file:px-3 file:py-2 file:font-semibold file:text-[#002576] disabled:cursor-wait disabled:opacity-60"

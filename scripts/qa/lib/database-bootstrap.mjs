@@ -5,6 +5,9 @@ export const DATABASE_BOOTSTRAP = `
   create role anon nologin;
   create role authenticated nologin;
   create role service_role nologin bypassrls;
+  -- Emulate the empty publication supplied by real Supabase. Only a reviewed
+  -- app migration adds tables; this does not simulate Realtime delivery.
+  create publication supabase_realtime;
   create schema auth;
   create schema storage;
   create schema extensions;

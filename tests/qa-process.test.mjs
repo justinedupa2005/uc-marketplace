@@ -40,6 +40,28 @@ test("failed QA children expose structured failure metadata without their privat
   assert.equal(ordinary.getAcceptanceFailure(), null);
 });
 
+test("QA children expose the newest safe stdout phase without private output or stderr injection", async () => {
+  const phase = (name) => `QA_PHASE_JSON:${JSON.stringify({ version: 1, status: "running", phase: name })}\n`;
+  const output = `private-SDK-output\n${phase("api")}${phase("browser")}QA_PHASE_JSON:${JSON.stringify({ version: 1, status: "running", phase: "cleanup", secret: "private-token" })}\nQA_PHASE_JSON:not-json\n`;
+  const handle = worker(`process.stdout.write(${JSON.stringify(output)});process.stderr.write(${JSON.stringify(phase("cleanup"))});process.exitCode=1`);
+  await assert.rejects(handle.wait(), (error) => error.reason === "exit");
+  assert.deepEqual(handle.getAcceptancePhase(), { version: 1, status: "running", phase: "browser" });
+  assert.doesNotMatch(JSON.stringify(handle.getAcceptancePhase()), /private-|cleanup/);
+  const ordinary = worker("process.stdout.write('private-SDK-output');process.exitCode=0");
+  await ordinary.wait();
+  assert.equal(ordinary.getAcceptancePhase(), null);
+});
+
+test("QA phase progress is readable while the child is still running", async () => {
+  const line = `QA_PHASE_JSON:${JSON.stringify({ version: 1, status: "running", phase: "build" })}\n`;
+  const handle = worker(`process.stdout.write(${JSON.stringify(line)});setInterval(()=>{},1000)`);
+  try {
+    await new Promise((resolve) => handle.child.stdout.once("data", resolve));
+    assert.doesNotThrow(() => handle.assertHealthy());
+    assert.deepEqual(handle.getAcceptancePhase(), { version: 1, status: "running", phase: "build" });
+  } finally { await handle.stop(); }
+});
+
 test("QA timeout settles after the owned child has closed", async () => {
   const handle = worker("setInterval(()=>{},1000)");
   let closed = false;

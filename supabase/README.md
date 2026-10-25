@@ -4,6 +4,29 @@ Database changes are stored as forward-only SQL migrations in
 `supabase/migrations`. Never edit a migration after it has been applied to the
 remote project.
 
+Before deployment, complete the [CI and dependency-security release gate](../docs/ci-dependency-security.md).
+Local QA success does not certify a different GitHub commit or authorize hosted migrations.
+
+For hosted integration testing, use the [separate staging environment](../docs/staging-environment.md).
+It has an explicitly registered project, protected Vercel configuration, synthetic
+fixtures, and an approval-gated migration workflow. Never use the existing linked
+project as staging or run a linked reset/push to bootstrap testing.
+
+Step 4 adds the [database security verification gate](../docs/database-security-verification.md):
+actual schema/grant drift detection, hosted RLS/Storage/API acceptance, reviewed
+messaging publication and generated staging types. Use that guide instead of
+the historical linked-project/staged-file deployment instructions below.
+
+Step 6 adds [production authentication and email safeguards](../docs/production-authentication.md),
+including managed templates, exact callbacks, password policies and a guarded
+Auth configuration tool. SMTP delivery remains deferred and production deployment
+remains disabled; hosted setting read-back is not proof of email delivery.
+
+Step 5 adds [deployment environment configuration](../docs/deployment-environment.md):
+loopback-only local setup, isolated hosted variable scopes, persistent write-only
+recovery Secrets, build/startup guards, and controlled rotation. Production remains
+inactive and deployment-disabled by the owner's choice; its app public key is unset.
+
 ## Migrations
 
 Apply migrations in filename order:
@@ -62,8 +85,9 @@ Apply migrations in filename order:
      authenticated clients direct message writes.
 14. `staged/20260927010000_enable_messaging_realtime.sql`
    - Idempotently adds only `public.messages` to the `supabase_realtime`
-     publication after the database-only two-account flow has passed. It stays
-     outside `migrations/` until that acceptance gate is complete.
+     publication after the database-only two-account flow has passed. Retained
+     outside normal history for legacy/local QA compatibility; new deployments
+     use migration `20261022000000` below. Do not move or backdate this file.
 15. `20260928000000_complete_reservations_and_meetups.sql`
    - Completes reservation history, private meetup scheduling, atomic
      acceptance/cancellation/sale RPCs, participant messaging, and retained
@@ -85,9 +109,17 @@ Apply migrations in filename order:
    - Step 15 parent-first Storage/evidence locking and stale draft image-insert
      protection. Preserves trusted available/reserved image edits. This is a
      forward migration; do not rewrite previously applied files.
+20. `20261022000000_enable_secure_messaging_realtime.sql`
+   - Reviewed Step 4 messaging publication: only `public.messages`, only
+     INSERT/UPDATE, with RLS/RPC prerequisites and no student-data mutation.
+     Supersedes manually promoting the old optional staged publication.
+21. `20261022010000_use_non_retryable_business_conflicts.sql`
+   - Returns explicit stale/lifecycle conflicts as non-retryable HTTP 409
+     (`PT409`) instead of serialization failures (`40001`). Preserves the
+     existing seven RPCs' authorization, locks, signatures and grants.
 
 The numbered list includes optional staged Realtime; the normal migration
-directory currently contains 18 files. Use actual versions, not list numbers,
+directory currently contains 20 files. Use actual versions, not list numbers,
 when reconciling migration history.
 
 ## Applying these migrations to another project

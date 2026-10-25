@@ -1,0 +1,77 @@
+name: Approved staging database migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Apply reviewed pending migrations to staging (false is read-only plan)
+        type: boolean
+        default: false
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+# Do not cancel a migration in progress. No production job or production secrets.
+concurrency:
+  group: staging-database
+  cancel-in-progress: false
+
+jobs:
+  staging-database:
+    if: github.ref == 'refs/heads/staging'
+    environment: staging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Verify current staging head and its exact-commit CI after approval
+        run: node scripts/staging/verify-ci.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - run: npm run qa:secrets
+      - run: npm ci
+      - name: Recheck source and CI immediately before accessing migration credentials
+        run: node scripts/staging/verify-ci.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Plan reviewed staging migrations
+        if: ${{ !inputs.apply }}
+        run: npm run staging:plan
+        env:
+          STAGING_PROJECT_REF: niocptgzzbozpbfzifdk
+          STAGING_ALLOW_MUTATIONS: "1"
+          STAGING_MANAGEMENT_TOKEN: ${{ secrets.STAGING_MANAGEMENT_TOKEN }}
+      - name: Inspect actual schema, RLS, Storage and publication without writes
+        if: ${{ !inputs.apply }}
+        run: npm run staging:audit
+        env:
+          STAGING_PROJECT_REF: niocptgzzbozpbfzifdk
+          STAGING_ALLOW_MUTATIONS: "1"
+          STAGING_MANAGEMENT_TOKEN: ${{ secrets.STAGING_MANAGEMENT_TOKEN }}
+      - name: Apply and validate reviewed staging migrations
+        if: ${{ inputs.apply }}
+        run: npm run staging:migrate
+        env:
+          STAGING_PROJECT_REF: niocptgzzbozpbfzifdk
+          STAGING_ALLOW_MUTATIONS: "1"
+          STAGING_MANAGEMENT_TOKEN: ${{ secrets.STAGING_MANAGEMENT_TOKEN }}
+      - name: Verify the applied schema and generated public types
+        if: ${{ inputs.apply }}
+        run: |
+          npm run staging:audit
+          npm run db:types:check
+        env:
+          STAGING_PROJECT_REF: niocptgzzbozpbfzifdk
+          STAGING_ALLOW_MUTATIONS: "1"
+          STAGING_MANAGEMENT_TOKEN: ${{ secrets.STAGING_MANAGEMENT_TOKEN }}
+      # Configure a fine-grained staging-only token in this approved environment.
+      # Never upload SQL responses, Auth records, traces or credentials.

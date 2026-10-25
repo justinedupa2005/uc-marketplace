@@ -1,4 +1,8 @@
 import type { NextConfig } from "next";
+import { assertDeploymentEnabled, validateDeploymentEnvironment } from "./src/lib/deployment-environment";
+
+const deployment = validateDeploymentEnvironment(process.env);
+assertDeploymentEnabled(deployment.mode);
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseSource = supabaseUrl ? new URL(supabaseUrl) : null;
@@ -65,7 +69,7 @@ const nextConfig: NextConfig = {
       : [],
   },
   async headers() {
-    return [
+    const protectedRoutes = [
       "/login",
       "/register",
       "/register/check-email",
@@ -89,6 +93,10 @@ const nextConfig: NextConfig = {
       "/auth/confirm",
       "/auth/recovery",
     ].map((source) => ({ source, headers: authSecurityHeaders }));
+    return [
+      ...(deployment.noIndex ? [{ source: "/:path*", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" }] }] : []),
+      ...protectedRoutes,
+    ];
   },
 };
 

@@ -102,6 +102,14 @@ async function runChecks(context) {
   check((await profileState(competitor)).verification_status === "verified", "verification approval unlocks the competitor account");
   const adminDocument = await moderator.storage.from("student-verifications").download(secondVerification.documentPath);
   check(!adminDocument.error && adminDocument.data?.size > 0, "admin can privately review school-ID bytes", adminDocument);
+  const signingStartedAt = Math.floor(Date.now() / 1000);
+  const signedDocument = await success(moderator.storage.from("student-verifications").createSignedUrl(secondVerification.documentPath, 60), "authorized admin can issue a short-lived private verification URL");
+  let signedClaims;
+  try { signedClaims = JSON.parse(Buffer.from(new URL(signedDocument.signedUrl).searchParams.get("token").split(".")[1], "base64url").toString("utf8")); } catch { /* The assertion below fails closed. */ }
+  check(Number.isSafeInteger(signedClaims?.exp) && signedClaims.exp > signingStartedAt && signedClaims.exp <= signingStartedAt + 65,
+    "private verification signing has a bounded one-minute lifetime");
+  const signedDownload = await fetch(signedDocument.signedUrl, { redirect: "error", signal: AbortSignal.timeout(15_000) });
+  check(signedDownload.ok, "authorized short-lived verification URL downloads the synthetic placeholder");
   await storageDenied(buyer.client.storage.from("student-verifications").download(secondVerification.documentPath), "another student cannot download private school ID");
   await invisible(buyer.client.from("verifications").select("id,document_path,rejection_reason").eq("user_id", competitor.id), "another student's verification details are not returned");
   await storageDenied(buyer.client.storage.from("student-verifications").createSignedUrl(secondVerification.documentPath, 60), "another student cannot sign private school-ID access");
@@ -128,7 +136,7 @@ async function runChecks(context) {
   const editable = await success(seller.client.from("listings").select("updated_at").eq("id", listing.id).single(), "owner can load listing edit version");
   const editArgs = { p_listing_id: listing.id, p_expected_updated_at: editable.updated_at, p_title: `QA ${runId} workflow calculator updated`, p_description: "QA description-only-keyword scientific calculator in good working order.", p_category_id: categoryId, p_price: 650, p_condition: "good", p_image_paths: [listing.path] };
   await success(seller.client.rpc("update_owned_listing", editArgs), "owner saves listing details through authorized versioned RPC");
-  await denied(seller.client.rpc("update_owned_listing", { ...editArgs, p_title: "Stale update must not replace current title" }), "stale listing version cannot overwrite a successful owner edit", ["40001"]);
+  await denied(seller.client.rpc("update_owned_listing", { ...editArgs, p_title: "Stale update must not replace current title" }), "stale listing version cannot overwrite a successful owner edit", ["PT409"]);
   await denied(buyer.client.rpc("update_owned_listing", editArgs), "buyer cannot bypass ownership through listing edit RPC");
   const visible = await success(buyer.client.from("listings").select("id,title,price,status,seller_id").eq("id", listing.id).single(), "buyer sees persisted available listing");
   check(visible.status === "available" && visible.seller_id === seller.id && visible.title === editArgs.p_title, "listing has real seller, owner edit, and available state");
@@ -156,6 +164,10 @@ async function runChecks(context) {
   check(isUnchangedStorageResult(referencedDelete), "even owner cannot delete a currently referenced published image", referencedDelete);
 
   const avatarPath = `${buyer.id}/${randomUUID()}.png`;
+  const invalidAvatar = await buyer.client.storage.from("avatars").upload(`${buyer.id}/${randomUUID()}.png`, image, { contentType: "application/pdf", upsert: false });
+  check(invalidAvatar.error?.code === "InvalidMimeType", "Storage HTTP enforces avatar MIME restrictions", invalidAvatar);
+  const oversizedAvatar = await buyer.client.storage.from("avatars").upload(`${buyer.id}/${randomUUID()}.png`, Buffer.alloc(2 * 1024 * 1024 + 1), { contentType: "image/png", upsert: false });
+  check(oversizedAvatar.error?.code === "EntityTooLarge", "Storage HTTP enforces the two MiB avatar limit", oversizedAvatar);
   await denied(buyer.client.from("profiles").update({ avatar_path: `${buyer.id}/${randomUUID()}.png` }).eq("id", buyer.id), "profile cannot link an avatar object that does not exist", ["23514"]);
   await success(buyer.client.storage.from("avatars").upload(avatarPath, image, { contentType: "image/png", upsert: false }), "student uploads own avatar");
   await success(buyer.client.from("profiles").update({ avatar_path: avatarPath }).eq("id", buyer.id).select("id").single(), "student links real owned avatar object");
@@ -196,7 +208,7 @@ async function runChecks(context) {
   // Actual simultaneous HTTP requests (not a sequential SQL approximation).
   const decisions = await Promise.all([seller.client.rpc("accept_reservation", { p_reservation_id: firstReservation }), seller.client.rpc("accept_reservation", { p_reservation_id: competingReservation })]);
   check(decisions.filter(isSuccessfulApiResult).length === 1, "concurrent seller acceptance has exactly one winner");
-  check(decisions.filter((result) => result.error).every((result) => isExpectedDataDenial(result, ["P0002", "40001", "23505"])), "concurrent acceptance loser fails for a committed state conflict, not transport or configuration");
+  check(decisions.filter((result) => result.error).every((result) => isExpectedDataDenial(result, ["P0002", "PT409", "40001", "23505"])), "concurrent acceptance loser fails for a committed state conflict, not transport or configuration");
   const raced = await success(admin.from("reservations").select("id,status,buyer_id").eq("listing_id", listing.id), "inspect concurrent committed reservations");
   check(raced.filter((row) => row.status === "accepted").length === 1 && raced.filter((row) => row.status === "rejected").length === 1, "one accepted reservation and one rejected competitor persist atomically");
   check((await success(admin.from("listings").select("status").eq("id", listing.id).single(), "inspect reserved listing after race")).status === "reserved", "race winner atomically reserves listing");
@@ -217,7 +229,7 @@ async function runChecks(context) {
   await denied(buyer.client.rpc("upsert_meetup", { ...meetupArgs, p_reservation_id: unrelatedReservation }), "unrelated meetup cannot be modified");
   const sellerMeetup = await success(seller.client.from("meetups").select("id,status,notes,updated_at").eq("id", meetupId).single(), "seller sees participant meetup details");
   check(sellerMeetup.status === "scheduled" && sellerMeetup.notes === meetupArgs.p_notes, "meetup is persisted for both participants");
-  await denied(seller.client.rpc("upsert_meetup", { ...meetupArgs, p_expected_updated_at: "2000-01-01T00:00:00Z" }), "stale meetup version cannot overwrite a newer schedule", ["40001"]);
+  await denied(seller.client.rpc("upsert_meetup", { ...meetupArgs, p_expected_updated_at: "2000-01-01T00:00:00Z" }), "stale meetup version cannot overwrite a newer schedule", ["PT409"]);
   await denied(buyer.client.rpc("complete_sale", { p_reservation_id: reservationId }), "buyer cannot complete seller-side sale");
 
   // Suspension is checked through the existing authenticated session. There is

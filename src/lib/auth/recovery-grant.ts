@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { isStrongRecoverySecret } from "./recovery-secret.mjs";
 
 export const RECOVERY_GRANT_MAX_AGE_SECONDS = 15 * 60;
 const identityPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -23,7 +24,7 @@ export type RecoveryCallback =
 function signingKey(secret: string | undefined) {
   // Configure 32-64 cryptographically random bytes encoded as hex. There is
   // deliberately no generated/default key or reuse of a Supabase credential.
-  if (!secret || !/^(?:[0-9a-fA-F]{2}){32,64}$/.test(secret)) return null;
+  if (!secret || !isStrongRecoverySecret(secret)) return null;
   return Buffer.from(secret, "hex");
 }
 
@@ -111,7 +112,7 @@ export function parseRecoveryCallback(parameters: URLSearchParams): RecoveryCall
   if ([...parameters.keys()].some((key) => parameters.getAll(key).length !== 1)) return null;
   // `token` belongs to Auth's verification endpoint, never this app callback.
   // Ignoring it beside a code/hash would leave ambiguous recovery provenance.
-  if (parameters.has("token")) return null;
+  if (["token", "error", "error_code", "error_description"].some((key) => parameters.has(key))) return null;
   const type = parameters.get("type");
   if (type !== null && type !== "recovery") return null;
   const hasToken = parameters.has("token_hash");

@@ -63,7 +63,7 @@ export async function requestReservation(
   );
   const { data, error } = await supabase.rpc("request_reservation", {
     p_listing_id: parsed.data.listingId,
-    p_message: parsed.data.message,
+    ...(parsed.data.message === null ? {} : { p_message: parsed.data.message }),
   });
 
   if (error || typeof data !== "string") {
@@ -166,10 +166,10 @@ export async function saveMeetup(
   const { data, error } = await supabase.rpc("upsert_meetup", {
     p_reservation_id: parsed.data.reservationId,
     p_location_name: parsed.data.locationName,
-    p_location_details: parsed.data.locationDetails,
+    p_location_details: parsed.data.locationDetails ?? "",
     p_scheduled_at: parsed.data.scheduledAt,
-    p_notes: parsed.data.notes,
-    p_expected_updated_at: parsed.data.expectedUpdatedAt,
+    p_notes: parsed.data.notes ?? "",
+    ...(parsed.data.expectedUpdatedAt === null ? {} : { p_expected_updated_at: parsed.data.expectedUpdatedAt }),
   });
 
   if (error || typeof data !== "string") {
