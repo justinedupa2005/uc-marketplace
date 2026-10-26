@@ -37,8 +37,9 @@ deployment is enabled.
 Step 7 adds [protected staging deployment](docs/staging-deployment.md), exact-commit
 CI/hosting/database guards and a separate staging-only browser smoke. Staging is
 deployed at [uc-online-shop-staging.vercel.app](https://uc-online-shop-staging.vercel.app)
-(Vercel sign-in required). Source `7f170f6` passed exact-commit CI/full-stack QA,
-470 hosted checks across five roles, and a 15-check private-document probe.
+(Vercel sign-in required). Initial Step 7 source `7f170f6` passed exact-commit
+CI/full-stack QA, 470 hosted checks across five roles, and a 15-check
+private-document probe.
 Private 5 MiB uploads work without passing files through Vercel functions.
 Automatic Git deployments remain off; temporary test bypasses are revoked and
 the production release block is unchanged. External SMTP acceptance is still
@@ -47,8 +48,14 @@ deferred.
 Step 8 adds [deployed end-to-end acceptance](docs/deployed-e2e-testing.md) via
 `npm run staging:e2e`: run-owned accounts, full hosted purchase workflow,
 direct-API security, concurrent reservation tests and accessibility scans.
+Current staging source `b277d3e` passed exact-commit CI, **455** regression tests,
+**326** hosted browser assertions, **253** API/Storage checks, **3** database race
+scenarios and **4** Realtime scenarios. All **16** accessibility scans have no
+confirmed violations after the measured contrast fixes. Temporary accounts/files
+were cleaned up and hosting bypasses revoked; shared staging data was preserved.
 Real inbox, physical-device and screen-reader acceptance remain separate gates;
-an automated pass does not enable production or complete those manual checks.
+incomplete accessibility findings and small touch targets also need manual review.
+An automated pass does not enable production or complete those manual checks.
 
 The app uses the existing `NEXT_PUBLIC_APP_URL` and
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` names; do not add URL/key aliases.
