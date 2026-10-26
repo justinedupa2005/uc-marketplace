@@ -7,13 +7,11 @@ import { z } from "zod";
 import { requireVerifiedActiveStudent } from "@/lib/auth/authorization";
 import {
   getListingFieldErrors,
-  hasMatchingListingImageSignature,
-  LISTING_IMAGE_EXTENSIONS,
   listingDetailsSchema,
-  listingImageSchema,
   MAX_LISTING_IMAGES,
   type ListingFieldErrors,
 } from "@/features/listings/validation";
+import { isOwnedPrivateImagePath, readPrivateImage } from "@/features/uploads/private-images";
 
 const idSchema = z.string().uuid();
 const timestampSchema = z.string().datetime({ offset: true });
@@ -72,6 +70,19 @@ async function removeObjects(supabase: AuthorizedSupabase, paths: string[]) {
   return succeeded;
 }
 
+export async function prepareListingEditUpload(formData: FormData): Promise<{ ownerId?: string; message?: string }> {
+  const id = idSchema.safeParse(formData.get("listingId"));
+  const version = timestampSchema.safeParse(formData.get("expectedUpdatedAt"));
+  if (!id.success || !version.success) return { message: "This edit form expired. Refresh before trying again." };
+  const { supabase, user } = await requireVerifiedActiveStudent(`/listing/${id.data}/edit`);
+  const { data, error } = await supabase.from("listings").select("status, updated_at")
+    .eq("id", id.data).eq("seller_id", user.id).maybeSingle();
+  if (error || !data || !["available", "reserved"].includes(data.status) || data.updated_at !== version.data) {
+    return { message: "This listing is unavailable or has changed. Refresh before editing again." };
+  }
+  return { ownerId: user.id };
+}
+
 export async function updateListing(
   _previousState: UpdateListingState,
   formData: FormData,
@@ -93,9 +104,9 @@ export async function updateListing(
   const newImageTokens = tokenListSchema.safeParse(
     parseJson(formData.get("newImageTokens")),
   );
-  const newImages = formData
-    .getAll("newImages")
-    .filter((value): value is File => typeof value !== "string");
+  const newPaths = z.array(z.string().min(1).max(160)).max(MAX_LISTING_IMAGES).safeParse(
+    parseJson(formData.get("newImagePaths")),
+  );
 
   if (!listingId.success || !expectedUpdatedAt.success) {
     return state("This edit form expired. Refresh the page and try again.");
@@ -108,7 +119,7 @@ export async function updateListing(
     );
   }
 
-  if (!imageOrder.success || !newImageTokens.success) {
+  if (!imageOrder.success || !newImageTokens.success || !newPaths.success || formData.getAll("newImages").length) {
     return state("Choose between one and five valid listing images.", {
       images: "Keep at least one image and use no more than five.",
     });
@@ -127,7 +138,8 @@ export async function updateListing(
     .filter((reference) => reference.kind === "new")
     .map((reference) => reference.value);
   if (
-    newImages.length !== newImageTokens.data.length ||
+    newPaths.data.length !== newImageTokens.data.length ||
+    new Set(newPaths.data).size !== newPaths.data.length ||
     orderedNewTokens.length !== newImageTokens.data.length ||
     orderedNewTokens.some((token) => !newImageTokens.data.includes(token)) ||
     new Set(newImageTokens.data).size !== newImageTokens.data.length
@@ -137,30 +149,13 @@ export async function updateListing(
     });
   }
 
-  for (const [index, image] of newImages.entries()) {
-    const parsedImage = listingImageSchema.safeParse(image);
-    if (!parsedImage.success) {
-      return state("One of the selected images is invalid.", {
-        images: `Image ${index + 1}: ${parsedImage.error.issues[0]?.message ?? "Choose another image."}`,
-      });
-    }
-
-    try {
-      if (!(await hasMatchingListingImageSignature(image))) {
-        return state("One of the selected files is not a valid product image.", {
-          images: `Image ${index + 1} does not match its file type.`,
-        });
-      }
-    } catch {
-      return state("One of the selected images could not be read.", {
-        images: `Image ${index + 1} could not be read.`,
-      });
-    }
-  }
-
   const { supabase, user } = await requireVerifiedActiveStudent(
     `/listing/${listingId.data}/edit`,
   );
+  const uploadedPaths = newPaths.data;
+  if (uploadedPaths.some((path) => !isOwnedPrivateImagePath(path, user.id, listingId.data, "listing"))) {
+    return state("New images must belong to this listing.", { images: "Choose the new images again." });
+  }
   const { data: currentListing, error: listingError } = await supabase
     .from("listings")
     .select("id, status, updated_at, listing_images(storage_path)")
@@ -174,9 +169,11 @@ export async function updateListing(
   }
   if (!currentListing) return state("You are not allowed to modify this listing.");
   if (!['available', 'reserved'].includes(String(currentListing.status))) {
+    await removeObjects(supabase, uploadedPaths);
     return state("This listing can no longer be edited.");
   }
   if (String(currentListing.updated_at) !== expectedUpdatedAt.data) {
+    await removeObjects(supabase, uploadedPaths);
     return state("This listing changed after you opened the form. Refresh before editing again.");
   }
 
@@ -189,6 +186,7 @@ export async function updateListing(
     .filter((reference) => reference.kind === "existing")
     .map((reference) => reference.value);
   if (submittedExistingPaths.some((path) => !existingPaths.has(path))) {
+    await removeObjects(supabase, uploadedPaths);
     return state("One of the existing images is no longer available. Refresh the page.", {
       images: "Refresh before changing the image order.",
     });
@@ -202,41 +200,21 @@ export async function updateListing(
     .maybeSingle();
   if (categoryError || !category) {
     if (categoryError) logEditFailure("category-check", categoryError.code);
+    await removeObjects(supabase, uploadedPaths);
     return state("Select an available category.", {
       categoryId: "Select an active category.",
     });
   }
 
-  const uploadedPaths: string[] = [];
   const pathByToken = new Map<string, string>();
-
-  for (const [index, image] of newImages.entries()) {
+  for (const [index, path] of uploadedPaths.entries()) {
     const token = newImageTokens.data[index];
-    const extension = LISTING_IMAGE_EXTENSIONS[image.type];
-    const path = `${user.id}/${listingId.data}/${crypto.randomUUID()}.${extension}`;
-    uploadedPaths.push(path);
-
-    try {
-      const { error } = await supabase.storage.from("listing-images").upload(path, image, {
-        cacheControl: "3600",
-        contentType: image.type,
-        upsert: false,
-      });
-      if (error) {
-        logEditFailure("image-upload", error.name);
-        await removeObjects(supabase, uploadedPaths);
-        return state("A new image could not be uploaded. Please try again.", {
-          images: "Image upload failed. Check your connection and retry.",
-        });
-      }
-    } catch {
-      logEditFailure("image-upload");
+    if (!(await readPrivateImage(supabase.storage.from("listing-images"), path))) {
       await removeObjects(supabase, uploadedPaths);
-      return state("A new image could not be uploaded. Please try again.", {
-        images: "Image upload failed. Check your connection and retry.",
+      return state("An uploaded image could not be verified. Choose it again.", {
+        images: "Use JPEG, PNG, or WebP images no larger than 5 MB with matching file contents.",
       });
     }
-
     pathByToken.set(token, path);
   }
 
@@ -262,11 +240,14 @@ export async function updateListing(
 
   if (updateError || !updateResult || typeof updateResult !== "object") {
     logEditFailure("database-update", updateError?.code);
-    await removeObjects(supabase, uploadedPaths);
+    // Never delete images on an ambiguous network outcome: the transactional
+    // edit may already have committed. Only definite SQL rejections are safe.
+    const definiteRejection = ["PT409", "40001", "22023", "23505", "23514", "42501", "P0001", "P0002"].includes(updateError?.code ?? "");
+    if (definiteRejection) await removeObjects(supabase, uploadedPaths);
     return state(
       ["PT409", "40001"].includes(updateError?.code ?? "")
         ? "This listing changed while you were editing. Refresh and review the latest version."
-        : "Unable to update your listing. Please try again.",
+        : definiteRejection ? "Unable to update your listing. Please try again." : "We couldn't confirm the edit. Refresh your listing before trying again.",
     );
   }
 

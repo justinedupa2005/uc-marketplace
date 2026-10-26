@@ -162,6 +162,67 @@ owner authorized a temporary staging-only bypass for the later browser smoke;
 create it only after deployment, then revoke it even if testing fails. HTTPS app
 pages, deployed functions/images/cookies and runtime logs remain unverified.
 
+### First deployment attempt and hosting compatibility
+
+After the owner authorized the repository, its Vercel connection was verified.
+The UI defaulted to `main`; only the staging project's branch was corrected to
+`staging`, preserving All Deployments protection and disabled automatic builds.
+PR #4 merged as `b1ce106d80c97f3d35f6af5a85192da64d4ce81a`, and its exact push
+CI [run 40201270011](https://github.com/justinedupa2005/uc-marketplace/actions/runs/40201270011)
+passed. The final read-only plan again found 20 applied migrations, zero drift or
+pending versions and 129 successful security checks.
+
+A single deployment request created `dpl_25KGN9MbQULaDVbzFLABP45s4F9b` from that
+immutable source. Its build failed before compilation: Vercel injects
+`NEXT_PUBLIC_VERCEL_OBSERVABILITY_CLIENT_CONFIG`, which the strict public-variable
+allowlist did not recognize. Only variable **names** and static error categories
+were inspected, not credential values. The fix adds that one public routing
+metadata name, keeps the credential checks and rejects lookalike secret aliases.
+Unknown-variable diagnostics now identify a bounded safe name without its value.
+See [Vercel's public client configuration](https://vercel.com/docs/analytics/package#dynamic-configuration).
+
+The failed deployment and exclusive attempt journal are retained; no ambiguous
+POST was retried, and no production application was deployed. A corrected source
+must pass its own staging PR and exact-commit push CI before another deployment.
+
+Upload acceptance also needs a hosting compatibility review: current file flows
+send files through Server Actions and permit 5 MiB per image / multiple listing
+images, above Vercel's [4.5 MB function request limit](https://vercel.com/docs/functions/limitations).
+Raising Next's bodySizeLimit cannot change the hosting limit. Preserving the
+existing file limits requires direct-to-private-Supabase upload flows with the
+same ownership, RLS, file-size/type/signature and finalize checks. The owner
+explicitly approved this refactor on 2026-10-26. Listing create/edit and school-ID
+forms now transfer file bytes directly to the existing private buckets using the
+student's session and `upsert: false`, not a service key. Only bounded references
+cross Server Actions. Prepare/finalize actions independently recheck eligibility,
+ownership, draft/submission token or edit version, and consent where applicable.
+Finalize inspects Storage size/MIME metadata before downloading a bounded object,
+then checks actual byte count, MIME/extension agreement and file signature.
+
+The existing 5 MiB / five-image limits and Storage policies are unchanged; no
+bucket was made public. Ambiguous finalization retains submitted objects, and
+failed upload cleanup stays confined to that attempt's paths. The admin document
+endpoint now streams authenticated no-store responses rather than returning a
+buffered 5 MiB response or exposing a signed document URL. The 2 MiB avatar flow
+is unchanged; Server Actions now allow 3 MiB including its multipart overhead.
+
+Fourteen new regressions cover these boundaries, actual browser pipelines and
+server actions. Disposable browser acceptance now includes a 5 MiB school ID,
+multi-image publication and a 5 MiB listing-edit image. The protected hosted smoke
+also exercises synthetic listing publication/edit with 5 MiB direct uploads,
+denies anonymous Storage downloads, checks that application action requests stay
+small, and archives only its own synthetic listing afterward. It retains that
+record's audit/Storage evidence instead of bypassing lifecycle deletion rules.
+
+On 2026-10-26, local full QA could not start because Windows reserved ports
+54325–54424 (binding QA port 54331 returns `EACCES`); no QA container owns that
+port. Existing development containers and Windows port reservations were left
+unchanged. Use the existing manual `security-qa.yml` workflow with `full_stack`
+enabled on the reviewed commit for the isolated Linux acceptance run. Local
+preflight failure is **not** counted as a successful full-stack test. The fresh
+local production build and targeted regressions pass; CI/hosted acceptance for
+the corrected source must still be recorded after execution.
+
 References: [Next.js deployment](https://nextjs.org/docs/app/getting-started/deploying),
 [Vercel Git configuration](https://vercel.com/docs/project-configuration/git-configuration),
 [Vercel Git branch tracking](https://vercel.com/docs/git),

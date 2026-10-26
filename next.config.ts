@@ -42,9 +42,9 @@ const authSecurityHeaders = [
 const nextConfig: NextConfig = {
   experimental: {
     serverActions: {
-      // Listing creation accepts up to five 5 MiB images in one authenticated
-      // action. Keep this close to the real multipart maximum to limit abuse.
-      bodySizeLimit: "30mb",
+      // Large private images go directly to Storage. Only the existing 2 MiB
+      // avatar action needs multipart headroom; stay below Vercel's 4.5 MB cap.
+      bodySizeLimit: "3mb",
     },
   },
   images: {

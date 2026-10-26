@@ -92,10 +92,23 @@ test("operator credentials and public secret/alias variables are rejected withou
 test("documented Vercel framework metadata is allowed without allowing credential aliases", () => {
   const values = application();
   const metadata = Object.fromEntries(VERCEL_PUBLIC_VARIABLES.map((name) => [name, "public-metadata"]));
-  assert.equal(VERCEL_PUBLIC_VARIABLES.length, 16);
+  assert.equal(VERCEL_PUBLIC_VARIABLES.length, 17);
   assert.equal(validateDeploymentEnvironment({ ...values, ...metadata }).mode, "staging");
   assert.throws(() => validateDeploymentEnvironment({ ...values, NEXT_PUBLIC_VERCEL_PRIVATE_TOKEN: "private-test-config" }));
   assert.throws(() => validateDeploymentEnvironment({ ...values, NEXT_PUBLIC_VERCEL_GIT_COMMIT_MESSAGE: values.AUTH_RECOVERY_SECRET }));
+});
+
+test("Vercel-injected public observability routing does not block a real hosted build or allow private aliases", () => {
+  const values = application();
+  const name = "NEXT_PUBLIC_VERCEL_OBSERVABILITY_CLIENT_CONFIG";
+  const publicRouting = JSON.stringify({ analytics: { scriptSrc: "/_vercel/insights/script.js", viewEndpoint: "/_vercel/insights/view" } });
+  assert.equal(validateDeploymentEnvironment({ ...values, VERCEL: "1", VERCEL_ENV: "production", [name]: publicRouting }).mode, "staging");
+  for (const value of [values.AUTH_RECOVERY_SECRET, `sb_secret_${randomBytes(24).toString("hex")}`]) {
+    assert.throws(() => validateDeploymentEnvironment({ ...values, [name]: value }), (error) => !error.message.includes(value));
+  }
+  const unknownName = "NEXT_PUBLIC_VERCEL_OBSERVABILITY_CLIENT_SECRET";
+  assert.throws(() => validateDeploymentEnvironment({ ...values, [unknownName]: "inert-negative-test-value" }),
+    (error) => error.message.includes(unknownName) && !error.message.includes("inert-negative-test-value"));
 });
 
 test("hosted keys reject placeholders and privileged legacy roles", () => {

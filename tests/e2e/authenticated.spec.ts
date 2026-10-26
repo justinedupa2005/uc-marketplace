@@ -4,7 +4,7 @@ import { isExpectedStorageDenial, isInvisibleDataResult, isSuccessfulApiResult }
 
 import {
   closeQaSessions, confirmAction, contentAlerts, expectDialogWithinViewport, expectNoHorizontalOverflow, holdQaMutation, loginQaSession,
-  moderate, openQaSession, qaEnvironment, qaImage, qaRoles, tabToModalControl, type QaSession,
+  moderate, openQaSession, qaEnvironment, qaImage, qaLargeImage, qaRoles, tabToModalControl, type QaSession,
 } from "./qa-helpers";
 
 const adminRoutes = ["/admin", "/admin/users", "/admin/listings", "/admin/reports", "/admin/verifications"];
@@ -108,7 +108,7 @@ test("real authenticated mutations recover from offline networks, suppress dupli
       await category.selectOption(categoryValue!);
       await seller.page.getByRole("radio", { name: /^Good/ }).check();
       await seller.page.getByLabel("Price (PHP)").fill("650");
-      await seller.page.locator("#listing-images").setInputFiles(qaImage);
+      await seller.page.locator("#listing-images").setInputFiles([qaLargeImage, qaImage]);
       await expect(seller.page.getByRole("img", { name: /Preview 1/ })).toBeVisible();
       const delayed = await holdQaMutation(seller.page, "/sell", title);
       try {
@@ -361,10 +361,13 @@ test("isolated verification, buyer/seller transaction, persistence, privacy, and
       await seller.page.getByRole("link", { name: "Edit", exact: true }).click();
       await expect(seller.page.getByLabel("Title", { exact: true })).toHaveValue(title);
       await seller.page.getByRole("textbox", { name: "Description", exact: true }).fill(`Edited synthetic calculator. ${descriptionWord}. Not a real sale.`);
+      await seller.page.locator("#edit-listing-images").setInputFiles(qaLargeImage);
       await seller.page.getByRole("button", { name: "Save Changes", exact: true }).click();
       await expect(seller.page).toHaveURL(new RegExp(`/listing/${listingId}(?:\\?|$)`));
       await seller.page.reload();
       await expect(seller.page.getByText(`Edited synthetic calculator. ${descriptionWord}. Not a real sale.`, { exact: true })).toBeVisible();
+      const editedImages = await seller.api.from("listing_images").select("storage_path").eq("listing_id", listingId);
+      expect(editedImages.data).toHaveLength(2);
     });
 
     await test.step("buyer searches description, combines filters, sorts, and preserves URL state", async () => {
@@ -685,7 +688,7 @@ test("isolated verification, buyer/seller transaction, persistence, privacy, and
 
 async function submitVerification(page: Page) {
   await page.goto("/verification");
-  await page.locator("#school-id-image").setInputFiles(qaImage);
+  await page.locator("#school-id-image").setInputFiles(qaLargeImage);
   await expect(page.getByRole("img", { name: "Preview of your selected school ID" })).toBeVisible();
   await page.getByRole("checkbox", { name: /I understand that my school ID/ }).check();
   await page.getByRole("button", { name: "Submit for verification", exact: true }).click();

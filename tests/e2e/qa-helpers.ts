@@ -16,6 +16,11 @@ export const qaImage = {
   buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWNgsFjxHwAC/AHgoLvpmAAAAABJRU5ErkJggg==", "base64"),
 };
 
+// Decodable synthetic PNG padded to the existing limit. It is deliberately
+// larger than Vercel's buffered request cap, not real student ID evidence.
+export const qaLargeImage = { ...qaImage, name: "isolated-qa-5mb.png",
+  buffer: Buffer.concat([qaImage.buffer, Buffer.alloc(5 * 1024 * 1024 - qaImage.buffer.length)]) };
+
 function required(name: string) {
   const value = process.env[name];
   if (!value) throw new Error(`Missing ${name}. Authenticated QA is unrun, not a passing release gate.`);

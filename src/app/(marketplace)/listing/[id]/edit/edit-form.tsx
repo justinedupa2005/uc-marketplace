@@ -37,8 +37,25 @@ import {
   type ListingFieldErrors,
 } from "@/features/listings/validation";
 
-import { updateListing, type UpdateListingState } from "./actions";
+import { prepareListingEditUpload, updateListing, type UpdateListingState } from "./actions";
 import { useEditableListingImages } from "./_hooks/use-editable-listing-images";
+import { uploadPrivateImages, validateDirectImages } from "@/features/uploads/direct-upload";
+import { PRIVATE_IMAGE_EXTENSIONS } from "@/features/uploads/private-images";
+
+async function saveWithDirectUploads(previous: UpdateListingState, formData: FormData): Promise<UpdateListingState> {
+  const files = formData.getAll("newImages").filter((value): value is File => value instanceof File);
+  formData.delete("newImages");
+  let paths: string[] = [];
+  if (files.length) {
+    if (!(await validateDirectImages(files))) return { message: "Choose valid new images.", fieldErrors: { images: "Use JPEG, PNG, or WebP images no larger than 5 MB." } };
+    const prepared = await prepareListingEditUpload(formData);
+    if (!prepared.ownerId) return { message: prepared.message ?? "Unable to verify your listing.", fieldErrors: {} };
+    paths = files.map((file) => `${prepared.ownerId}/${formData.get("listingId")}/${crypto.randomUUID()}.${PRIVATE_IMAGE_EXTENSIONS[file.type]}`);
+    if (!(await uploadPrivateImages("listing-images", paths, files))) return { message: "A new image could not be uploaded. Check your connection and retry.", fieldErrors: { images: "Image upload failed." } };
+  }
+  formData.set("newImagePaths", JSON.stringify(paths));
+  return updateListing(previous, formData);
+}
 
 const fieldIds: Record<ListingField, string> = {
   images: "edit-listing-images-section",
@@ -72,7 +89,7 @@ export function EditListingForm({
   categoryLoadError: boolean;
 }) {
   const initialState: UpdateListingState = { message: null, fieldErrors: {} };
-  const [actionState, formAction, pending] = useActionState(updateListing, initialState);
+  const [actionState, formAction, pending] = useActionState(saveWithDirectUploads, initialState);
   const [title, setTitle] = useState(listing.title);
   const [description, setDescription] = useState(listing.description);
   const [categoryId, setCategoryId] = useState(listing.categoryId);

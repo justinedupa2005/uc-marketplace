@@ -2,15 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 
 import { getValidatedUser } from "@/lib/auth/server";
 
-import {
-  hasMatchingImageSignature,
-  isSupportedSchoolIdImage,
-  SCHOOL_ID_EXTENSIONS,
-  studentInformationSchema,
-} from "./validation";
+import { studentInformationSchema } from "./validation";
+import { isOwnedPrivateImagePath, readPrivateImage } from "@/features/uploads/private-images";
 
 export type VerificationActionState = { message: string | null };
 
@@ -122,6 +119,30 @@ export async function updateStudentInformation(
   redirect("/verification?information=updated");
 }
 
+export async function prepareVerificationUpload(
+  formData: FormData,
+): Promise<VerificationActionState & { upload?: { ownerId: string; verificationId: string } }> {
+  if (formData.get("privacyConsent") !== "on") {
+    return { message: "Accept the privacy notice before submitting." };
+  }
+  try {
+    const { supabase, user } = await getValidatedUser();
+    if (!user) return { message: "Your session expired. Log in and try again." };
+    const { data: profile, error } = await supabase.from("profiles")
+      .select("full_name, student_id_number, course, year_level, role, account_status, verification_status")
+      .eq("id", user.id).maybeSingle();
+    if (error || !profile) return { message: unavailableMessage };
+    if (profile.role !== "student" || profile.account_status !== "active" ||
+      !["unverified", "rejected"].includes(profile.verification_status)) {
+      return { message: "This account cannot submit student verification. Refresh this page." };
+    }
+    const information = studentInformationSchema.safeParse({ fullName: profile.full_name,
+      studentIdNumber: profile.student_id_number, course: profile.course, yearLevel: profile.year_level });
+    if (!information.success) return { message: "Complete your student information before submitting." };
+    return { message: null, upload: { ownerId: user.id, verificationId: crypto.randomUUID() } };
+  } catch { return { message: unavailableMessage }; }
+}
+
 export async function submitStudentVerification(
   _previousState: VerificationActionState,
   formData: FormData,
@@ -129,21 +150,10 @@ export async function submitStudentVerification(
   if (formData.get("privacyConsent") !== "on") {
     return { message: "Accept the privacy notice before submitting." };
   }
-
-  const image = formData.get("schoolId");
-  if (!(image instanceof File) || !isSupportedSchoolIdImage(image)) {
-    return { message: "Choose a JPEG, PNG, or WebP image no larger than 5 MB." };
-  }
-
-  let hasValidSignature = false;
-  try {
-    hasValidSignature = await hasMatchingImageSignature(image);
-  } catch {
-    return { message: "We couldn't read the selected image. Choose another file." };
-  }
-
-  if (!hasValidSignature) {
-    return { message: "The selected file is not a valid JPEG, PNG, or WebP image." };
+  const id = z.string().uuid().safeParse(formData.get("verificationId"));
+  const documentPath = formData.get("documentPath");
+  if (!id.success || typeof documentPath !== "string" || documentPath.length > 160 || formData.has("schoolId")) {
+    return { message: "This upload form expired. Choose your school ID again." };
   }
 
   let submitted = false;
@@ -154,6 +164,12 @@ export async function submitStudentVerification(
     if (!user) {
       return { message: "Your session expired. Log in and try again." };
     }
+
+    const verificationId = id.data;
+    if (!isOwnedPrivateImagePath(documentPath, user.id, verificationId, "verification")) {
+      return { message: "The school ID upload does not belong to this request." };
+    }
+    uploadContext = { supabase, userId: user.id, verificationId, documentPath };
 
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
@@ -168,10 +184,12 @@ export async function submitStudentVerification(
     }
 
     if (profile.role !== "student" || profile.account_status !== "active") {
+      await reconcileUpload(uploadContext, true);
       return { message: "This account cannot submit student verification." };
     }
 
     if (!["unverified", "rejected"].includes(profile.verification_status)) {
+      await reconcileUpload(uploadContext, true);
       return { message: "A verification request is already pending or complete. Refresh this page." };
     }
 
@@ -183,23 +201,13 @@ export async function submitStudentVerification(
     });
 
     if (!information.success) {
+      await reconcileUpload(uploadContext, true);
       return { message: "Complete your student information before submitting." };
     }
 
-    const verificationId = crypto.randomUUID();
-    const extension = SCHOOL_ID_EXTENSIONS[image.type];
-    const documentPath = `${user.id}/${verificationId}/student-id.${extension}`;
-    uploadContext = { supabase, userId: user.id, verificationId, documentPath };
-    const { error: uploadError } = await supabase.storage
-      .from("student-verifications")
-      .upload(documentPath, image, {
-        contentType: image.type,
-        cacheControl: "0",
-        upsert: false,
-      });
-
-    if (uploadError) {
-      return { message: "We couldn't upload your school ID. Please try again." };
+    if (!(await readPrivateImage(supabase.storage.from("student-verifications"), documentPath))) {
+      await reconcileUpload(uploadContext, true);
+      return { message: "The uploaded school ID is invalid or unavailable. Use a JPEG, PNG, or WebP image no larger than 5 MB." };
     }
 
     const { error: submitError } = await supabase.rpc("submit_verification", {
