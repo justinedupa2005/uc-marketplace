@@ -28,8 +28,23 @@ export function assertVercelWrite({ endpoint, method, body }) {
     assert.ok(ids.some((id) => [
       [`/v9/projects/${id}`, "PATCH"], [`/v10/projects/${id}/env`, "POST"],
       ...(id === environments.staging.vercelProjectId ? [[`/v9/projects/${id}/link`, "POST"],
-        [`/v9/projects/${id}/branch`, "PATCH"], [`/v10/projects/${id}/protection-bypass`, "PATCH"]] : []),
+        [`/v9/projects/${id}/branch`, "PATCH"], [`/v1/projects/${id}/protection-bypass`, "PATCH"]] : []),
     ].some(([pathname, verb]) => url.pathname === pathname && method === verb)));
+  }
+  if (url.pathname.endsWith("/protection-bypass")) {
+    // The documented v1 API generates its own 32-character secret, including
+    // for OAuth CLI logins. No protection override or regeneration is allowed.
+    const keys = Object.keys(body);
+    assert.equal(keys.length, 1);
+    if (keys[0] === "generate") {
+      assert.deepEqual(Object.keys(body.generate), ["note"]);
+      assert.match(body.generate.note, /^[\x20-\x7e]{1,100}$/);
+    } else {
+      assert.equal(keys[0], "revoke");
+      assert.deepEqual(Object.keys(body.revoke).sort(), ["regenerate", "secret"]);
+      assert.match(body.revoke.secret, /^[a-zA-Z0-9]{32}$/);
+      assert.equal(body.revoke.regenerate, false);
+    }
   }
   assert.ok([...url.searchParams.keys()].every((name) => ["teamId", "upsert"].includes(name)));
   assert.equal([...url.searchParams.keys()].length, new Set(url.searchParams.keys()).size);

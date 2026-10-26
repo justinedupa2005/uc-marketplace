@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium } from "@playwright/test";
+import { chromium, expect } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import { registry, vercelApi } from "./vercel.mjs";
 import { assertStagingProject } from "./staging.mjs";
@@ -17,7 +17,7 @@ export function validateSmokeInput(input) {
   assert.deepEqual(Object.keys(input).sort(), ["accounts", "bypassSecret", "deploymentId", "publishableKey", "sha"].sort());
   assert.match(input.sha, /^[a-f0-9]{40}$/);
   assert.match(input.deploymentId, /^dpl_[a-zA-Z0-9]+$/);
-  assert.ok(typeof input.bypassSecret === "string" && input.bypassSecret.length >= 16);
+  assert.match(input.bypassSecret, /^[a-zA-Z0-9]{32}$/);
   assert.deepEqual(Object.keys(input.accounts).sort(), [...roles].sort());
   for (const role of roles) assert.ok(typeof input.accounts[role] === "string" && input.accounts[role].length >= 24);
   assert.equal(new Set(Object.values(input.accounts)).size, roles.length);
@@ -36,6 +36,14 @@ export function protectedRequestHeaders(url, headers, bypassSecret) {
   return safe;
 }
 
+export function expectedHostedAlerts(role, pathname) {
+  // This is an intentional authorization notice, not a load failure. Every
+  // other route/role must still contain no error alerts at all.
+  return role === "suspended" && pathname === "/profile" ? [
+    "Your account is suspended. Marketplace activity and profile editing are unavailable. You can still change your password, view account notifications, or log out.",
+  ] : [];
+}
+
 async function main() {
   assert.equal(process.argv.length, 2);
   let raw = "";
@@ -50,7 +58,7 @@ async function main() {
   assert.equal(deployment.readyState, "READY");
   assert.equal(deployment.meta?.githubCommitSha, input.sha);
   assert.equal(project.targets?.production?.id, deployment.id, "Smoke must test the canonical deployment, not an older alias.");
-  let checks = 0, phase = "HTTPS and hosting protection", browser, client, summary, uploads;
+  let checks = 0, phase = "HTTPS and hosting protection", browser, client, summary, uploads, routeLabel, roleLabel;
   const contexts = [];
   const failureCounts = { browserErrors: 0, hydrationErrors: 0, serverErrors: 0, productionRequests: 0 };
   const check = (condition) => { assert.ok(condition); checks += 1; };
@@ -90,13 +98,24 @@ async function main() {
       page.on("response", (response) => { if (new URL(response.url()).origin === origin && response.status() >= 500) failureCounts.serverErrors += 1; });
       return page;
     }
-    async function visit(page, route, expectedPath = new URL(route, origin).pathname) {
+    async function visit(page, route, expectedPath = new URL(route, origin).pathname, role) {
+      routeLabel = new URL(route, origin).pathname.replace(/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}/g, ":id");
       const response = await page.goto(route);
       check(response?.status() === 200);
       check(new URL(page.url()).origin === origin && new URL(page.url()).pathname === expectedPath);
       check((response.headers()["x-robots-tag"] ?? "").includes("noindex"));
-      check(await page.locator("h1").first().isVisible());
-      check(await page.locator("main [role=alert]").count() === 0);
+      // Hosted App Router pages can still be revealing a streamed boundary
+      // after the load event. Wait for actual content, never accept a skeleton.
+      await expect(page.locator("main h1").first()).toBeVisible(); checks += 1;
+      const allowedAlerts = expectedHostedAlerts(role, expectedPath);
+      const alerts = page.locator("main [role=alert]");
+      await expect(alerts).toHaveCount(allowedAlerts.length);
+      for (const [index, message] of allowedAlerts.entries()) {
+        // The reusable notification has a decorative aria-hidden "!" span;
+        // assert its entire message span rather than including that icon.
+        await expect(alerts.nth(index).locator(":scope > span:not([aria-hidden])")).toHaveText(message);
+      }
+      checks += 1;
       if (route !== "/") check((response.headers()["cache-control"] ?? "").includes("no-store"));
     }
     phase = "anonymous pages and callback handlers";
@@ -118,6 +137,7 @@ async function main() {
     }
     phase = "authenticated SSR, Server Actions and role isolation";
     for (const role of roles) {
+      roleLabel = role;
       const page = await session();
       await page.goto("/login");
       await page.getByLabel("Email address", { exact: true }).fill(`staging-${role}@example.test`);
@@ -128,10 +148,10 @@ async function main() {
       await page.waitForURL((url) => url.origin === origin && url.pathname === destination);
       check((await page.context().cookies()).some((cookie) => cookie.name.startsWith(`sb-${registry.staging.supabaseProjectRef}-auth-token`)
         && cookie.secure && cookie.sameSite === "Lax"));
-      await visit(page, "/profile");
-      check(await page.locator("h1").filter({ hasText: `STAGING TEST ${role}` }).count() === 1);
+      await visit(page, "/profile", "/profile", role);
+      await expect(page.locator("main h1")).toHaveText(`STAGING TEST ${role}`); checks += 1;
       await page.reload();
-      check(await page.locator("h1").filter({ hasText: `STAGING TEST ${role}` }).count() === 1);
+      await expect(page.locator("main h1")).toHaveText(`STAGING TEST ${role}`); checks += 1;
       if (role === "admin") {
         for (const route of ["/admin", "/admin/users", "/admin/listings", "/admin/reports", "/admin/verifications"]) await visit(page, route);
       } else if (["seller", "buyer"].includes(role)) {
@@ -151,15 +171,19 @@ async function main() {
         uploads = await testStagingPrivateUploads(page, input, check);
         phase = "authenticated SSR, Server Actions and role isolation";
       }
-      await page.getByRole("button", { name: "Log Out", exact: true }).first().click();
+      // Shared header uses aria-label="Log out"; other shells render "Log Out".
+      await page.getByRole("button", { name: /^Log out$/i }).first().click();
       await page.waitForURL((url) => url.origin === origin && url.pathname === "/login");
       await visit(page, "/profile", "/login");
     }
     check(Object.values(failureCounts).every((count) => count === 0));
     summary = { status: "passed", sha: input.sha, deploymentId: input.deploymentId, origin,
       checks, roles: roles.length, failureCounts, uploads, executedAt: new Date().toISOString(), externalEmailDelivery: "not_run", productionDeploymentEnabled: false };
-  } catch {
-    console.log(JSON.stringify({ status: "failed", phase, checks, failureCounts, privateDetailsWithheld: true, productionDeploymentEnabled: false }));
+  } catch (error) {
+    // Retain only a repository-owned source location, never the message,
+    // request body, browser contents or credential-bearing stack trace.
+    const sourceLocation = /staging-(?:smoke|uploads)\.mjs:\d+:\d+/.exec(String(error?.stack ?? ""))?.[0] ?? null;
+    console.log(JSON.stringify({ status: "failed", phase, role: roleLabel, route: routeLabel, checks, failureCounts, sourceLocation, privateDetailsWithheld: true, productionDeploymentEnabled: false }));
     process.exitCode = 1;
   } finally {
     const result = await client?.auth.signOut({ scope: "local" });

@@ -1,5 +1,12 @@
 # Protected Vercel staging deployment (Step 7)
 
+**Completed 2026-10-26:** the protected staging application is deployed and
+accepted. The immutable application source is
+`7f170f60c27314914fc0ccab2926d368a6aab454`; the final execution record below
+identifies its CI, deployment and hosted tests. Later operator/documentation-only
+commits do not replace that deployed artifact. Production remains disabled and
+external SMTP acceptance remains deferred.
+
 The only deployment target in this procedure is **uc-online-shop-staging**:
 <https://uc-online-shop-staging.vercel.app>. Its database is
 `niocptgzzbozpbfzifdk`. Marketplace production (`uc-online-shop`, database
@@ -248,6 +255,75 @@ The isolated full-stack [run 40252740559](https://github.com/justinedupa2005/uc-
 tests the upload implementation at `d77f43d`; its result is pending at this
 checkpoint. Both failed deployment journals are retained; no request was retried
 and no temporary hosting bypass or production deployment has been created.
+
+### Successful immutable deployment and acceptance — 2026-10-26
+
+PR #6 merged the complete framework metadata fix as application source
+`7f170f60c27314914fc0ccab2926d368a6aab454`.
+
+- Exact push CI: [40253699643](https://github.com/justinedupa2005/uc-marketplace/actions/runs/40253699643), successful.
+- Exact-source isolated full-stack QA: [40253867799](https://github.com/justinedupa2005/uc-marketplace/actions/runs/40253867799), successful. It ran **441** unit/regression tests,
+  **20** migrations / **535** embedded SQL assertions, **36** native messaging
+  assertions, **129** native catalog assertions, **253** API checks, **3**
+  concurrency scenarios, **4** Realtime scenarios, **12** local Mailpit/Auth checks,
+  and complete authenticated browser acceptance. No hosted credentials were used
+  in that disposable Linux workflow. External inbox delivery is not implied.
+- Immediately before deployment, the read-only staging audit again found all
+  20 migrations applied, no pending versions or schema/grant drift, and 129
+  passing security assertions. No migration, reset or production operation ran.
+- Deployment **`dpl_BxNC9jZ5Ngo2KDgpkm2UWVEqAvBc`** is **READY** and canonical at
+  <https://uc-online-shop-staging.vercel.app>. Its unique protected URL is
+  <https://uc-online-shop-staging-nv7wac24m-justinedupa2005s-projects.vercel.app>.
+  The build used Next.js 16.4.3, compiled successfully and reported no build
+  failure markers. Both earlier failed attempts/journals remain available.
+- Protected hosted acceptance completed at **2026-10-26 10:53:01 PHT** with
+  **470** checks and five separate synthetic roles: admin, pending, seller,
+  buyer and suspended. It verified HTTPS/hosting protection, direct navigation,
+  streamed main content, refresh/session identity, Secure/SameSite=Lax cookies,
+  login/logout Server Actions, role denials, no-store/noindex, invalid callbacks,
+  marketplace/search, listings, favorites, messages/conversation, reservations/
+  meetup detail, profile/edit, verification and admin pages.
+- Hosted seller publication and editing transferred **5,242,880-byte** synthetic
+  images directly to the existing private listing bucket. Three file transfers
+  succeeded; the largest application action request was only **1,924 bytes**.
+  Anonymous Storage download was denied. Each run archived only its own synthetic
+  listing; its audit/Storage evidence was retained, not forcibly deleted.
+- A separate **15-check** read-only hosted probe verified the private school-ID
+  endpoint: an authorized admin received the synthetic PNG with private/no-store,
+  no-referrer and nosniff headers and no signed-URL redirect. Anonymous users,
+  students and the signed-out administrator were denied. It also verified the
+  suspended student's exact restriction notice and own profile identity.
+- Hosted browser errors, hydration errors, server failures and requests to other
+  Supabase environments were all **zero**. Private browser state, photographs,
+  credentials and raw logs were not published or attached to CI artifacts.
+- Post-test read-only fixture verification passed with no public table missing
+  RLS. The hosted runtime review examined 50 entries and found zero errors or
+  server failures; no raw runtime logs were published.
+- Every temporary staging bypass was revoked and the prior bypass inventory and
+  All Deployments authentication were restored. Production stayed unconnected,
+  undeployed and release-disabled; no SMTP settings or emails were involved.
+
+The first hosted-test setup used an incorrect bypass API version/custom-token
+shape and was rejected before browser testing. The corrected operator uses the
+[documented v1 API](https://vercel.com/docs/rest-api/projects/update-protection-bypass-for-automation)
+with a server-generated 32-character token and non-regenerating revocation.
+Only staging generation/revocation is permitted; no protection override or
+production bypass is allowed. An ignored note-only journal permits scoped
+cleanup of an uncertain request without writing secrets to disk.
+
+Initial browser checks also exposed harness assumptions, not application
+exceptions: instant visibility checks preceded streamed content, the shared
+header's accessible "Log out" differed in capitalization, and the suspended
+profile intentionally contains a restriction alert with a decorative icon.
+The final harness waits for main content and exact profile identity, matches
+the real logout label, and requires exactly the known suspended-profile message
+span. Every other route/role still requires zero error alerts. Three additional
+operator regressions cover these contracts; no application/security test was
+disabled and no deployed application source changed during these corrections.
+
+Step 7 is complete. This does not complete deferred Step 6 external registration,
+recovery, real-inbox/mobile delivery or production acceptance. Keep production
+deployment disabled until those gates and explicit release approval are complete.
 
 References: [Next.js deployment](https://nextjs.org/docs/app/getting-started/deploying),
 [Vercel Git configuration](https://vercel.com/docs/project-configuration/git-configuration),

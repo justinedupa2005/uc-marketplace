@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { assertEnvironment, assertExactCi, assertStagingProject, assertVercelConfig, deploymentPayload, repository } from "../scripts/deployment/staging.mjs";
 import { registry } from "../scripts/deployment/vercel.mjs";
-import { protectedRequestHeaders, validateSmokeInput } from "../scripts/deployment/staging-smoke.mjs";
+import { expectedHostedAlerts, protectedRequestHeaders, validateSmokeInput } from "../scripts/deployment/staging-smoke.mjs";
 
 const sha = "a".repeat(40);
 const project = () => ({ id: registry.staging.vercelProjectId, accountId: registry.staging.vercelTeamId,
@@ -81,11 +81,32 @@ test("deployment payload pins immutable source and only the isolated staging hos
 
 test("hosted smoke accepts only owned synthetic accounts and a staging public API key", () => {
   const valid = { accounts: Object.fromEntries(["admin", "pending", "seller", "buyer", "suspended"].map((role) => [role, randomBytes(24).toString("hex")])),
-    bypassSecret: randomBytes(24).toString("hex"), publishableKey: `sb_publishable_${randomBytes(24).toString("base64url")}`, sha, deploymentId: "dpl_fixture" };
+    bypassSecret: randomBytes(16).toString("hex"), publishableKey: `sb_publishable_${randomBytes(24).toString("base64url")}`, sha, deploymentId: "dpl_fixture" };
   assert.doesNotThrow(() => validateSmokeInput(valid));
   for (const patch of [{ origin: registry.production.appOrigin }, { sha: "staging" }, { deploymentId: "untrusted" },
-    { accounts: { ...valid.accounts, other: "unexpected" } }, { publishableKey: "sb_secret_private" }, { bypassSecret: "" }]) {
+    { accounts: { ...valid.accounts, other: "unexpected" } }, { publishableKey: "sb_secret_private" }, { bypassSecret: "" },
+    { bypassSecret: "a".repeat(43) }, { bypassSecret: "_".repeat(32) }]) {
     assert.throws(() => validateSmokeInput({ ...valid, ...patch }));
+  }
+});
+
+test("hosted operator waits for streamed page content and matches each shell's actual accessible logout label", async () => {
+  const source = await readFile(new URL("../scripts/deployment/staging-smoke.mjs", import.meta.url), "utf8");
+  assert.ok(source.includes('await expect(page.locator("main h1").first()).toBeVisible()'));
+  assert.ok(source.includes('await expect(alerts).toHaveCount(allowedAlerts.length)'));
+  assert.ok(source.includes('await expect(alerts.nth(index).locator(":scope > span:not([aria-hidden])")).toHaveText(message)'));
+  assert.ok(source.includes('name: /^Log out$/i'));
+  assert.ok(source.includes('url.pathname === "/login"'), "Logout must still reach the unauthenticated destination.");
+  assert.ok(!source.includes('check(await page.locator("h1").first().isVisible())'), "An instantaneous skeleton check is not hosted page acceptance.");
+});
+
+test("only the suspended student's own profile accepts its exact expected restriction notice, never arbitrary errors", () => {
+  const expected = ["Your account is suspended. Marketplace activity and profile editing are unavailable. You can still change your password, view account notifications, or log out."];
+  assert.deepEqual(expectedHostedAlerts("suspended", "/profile"), expected);
+  for (const role of [undefined, "admin", "pending", "seller", "buyer", "suspended"]) {
+    for (const route of ["/login", "/marketplace", "/account-status", "/profile", "/profile/edit", "/admin"]) {
+      if (role !== "suspended" || route !== "/profile") assert.deepEqual(expectedHostedAlerts(role, route), []);
+    }
   }
 });
 
