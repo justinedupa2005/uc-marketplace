@@ -77,7 +77,10 @@ export async function GET(
       return new Response(null, { status: 404, headers: noStoreHeaders });
     }
 
-    return new Response(await image.arrayBuffer(), {
+    // Keep the authenticated, no-store proxy rather than exposing a bearer URL.
+    // A streaming response also supports school IDs above Vercel's buffered
+    // 4.5 MB response limit without changing the private bucket or 5 MiB cap.
+    return new Response(image.stream(), {
       status: 200,
       headers: {
         ...noStoreHeaders,

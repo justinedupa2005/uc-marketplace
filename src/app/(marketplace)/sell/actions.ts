@@ -7,11 +7,10 @@ import { z } from "zod";
 import { requireVerifiedActiveStudent } from "@/lib/auth/authorization";
 import {
   getListingFieldErrors,
-  hasMatchingListingImageSignature,
-  LISTING_IMAGE_EXTENSIONS,
-  listingFormSchema,
+  listingDetailsSchema,
   type ListingFieldErrors,
 } from "@/features/listings/validation";
+import { isOwnedPrivateImagePath, parsePrivateImagePaths, readPrivateImage } from "@/features/uploads/private-images";
 
 export type CreateListingState = {
   message: string | null;
@@ -125,10 +124,10 @@ function redirectToCreatedListing(listingId: string): never {
   redirect(`/listing/${listingId}?created=1`);
 }
 
-export async function createListing(
+export async function prepareListingUpload(
   previousState: CreateListingState,
   formData: FormData,
-): Promise<CreateListingState> {
+): Promise<CreateListingState & { upload?: { listingId: string; ownerId: string } }> {
   const submittedToken = submissionTokenSchema.safeParse(
     formData.get("submissionToken"),
   );
@@ -146,13 +145,12 @@ export async function createListing(
     );
   }
 
-  const parsed = listingFormSchema.safeParse({
+  const parsed = listingDetailsSchema.safeParse({
     title: formData.get("title"),
     description: formData.get("description"),
     categoryId: formData.get("categoryId"),
     price: formData.get("price"),
     condition: formData.get("condition"),
-    images: formData.getAll("images"),
   });
 
   if (!parsed.success) {
@@ -161,30 +159,6 @@ export async function createListing(
       "Check the highlighted fields and try again.",
       getListingFieldErrors(parsed.error),
     );
-  }
-
-  for (const [index, image] of parsed.data.images.entries()) {
-    let matchesSignature = false;
-
-    try {
-      matchesSignature = await hasMatchingListingImageSignature(image);
-    } catch {
-      return actionState(
-        submissionId,
-        "One of the selected images could not be read. Choose it again and retry.",
-        { images: `Image ${index + 1} could not be read.` },
-      );
-    }
-
-    if (!matchesSignature) {
-      return actionState(
-        submissionId,
-        "One of the selected files is not a valid product image.",
-        {
-          images: `Image ${index + 1} does not match its JPEG, PNG, or WebP file type.`,
-        },
-      );
-    }
   }
 
   const { supabase, user } = await requireVerifiedActiveStudent("/sell");
@@ -293,44 +267,39 @@ export async function createListing(
     );
   }
 
-  const uploadedPaths: string[] = [];
+  return { submissionId, message: null, fieldErrors: {}, upload: { listingId, ownerId: user.id } };
+}
 
-  for (const image of parsed.data.images) {
-    const extension = LISTING_IMAGE_EXTENSIONS[image.type];
-    const path = `${user.id}/${listingId}/${crypto.randomUUID()}.${extension}`;
-    // Track the attempted path before awaiting. If the network fails after
-    // Storage accepted the object, cleanup still knows the exact path.
-    uploadedPaths.push(path);
-    let uploadError: { name: string } | null = null;
+// Called only when the browser has finished transferring files directly to the
+// private bucket. Recheck identity/ownership; never trust browser MIME or sizes.
+export async function createListing(
+  previousState: CreateListingState,
+  formData: FormData,
+): Promise<CreateListingState> {
+  const token = submissionTokenSchema.safeParse(formData.get("submissionToken"));
+  const id = submissionTokenSchema.safeParse(formData.get("listingId"));
+  const uploadedPaths = parsePrivateImagePaths(formData.get("imagePaths"));
+  const submissionId = token.success ? token.data : previousState.submissionId;
+  if (!token.success || !id.success || !uploadedPaths || formData.getAll("images").length) {
+    return actionState(submissionId, "This upload form expired. Refresh before trying again.");
+  }
+  const { supabase, user } = await requireVerifiedActiveStudent("/sell");
+  const listingId = id.data;
+  if (uploadedPaths.some((path) => !isOwnedPrivateImagePath(path, user.id, listingId, "listing"))) {
+    return actionState(submissionId, "The selected images do not belong to this listing.", { images: "Choose your listing images again." });
+  }
+  const { data: draft, error: draftError } = await supabase.from("listings")
+    .select("id, status").eq("id", listingId).eq("seller_id", user.id)
+    .eq("submission_token", token.data).maybeSingle();
+  if (draftError || !draft) return actionState(submissionId, "Unable to confirm your draft. Check My Items before trying again.");
+  if (draft.status === "available") redirectToCreatedListing(draft.id);
+  if (draft.status !== "draft") return actionState(submissionId, "This listing can no longer be published.");
 
-    try {
-      const result = await supabase.storage
-        .from("listing-images")
-        .upload(path, image, {
-          cacheControl: "3600",
-          contentType: image.type,
-          upsert: false,
-        });
-      uploadError = result.error;
-    } catch {
-      uploadError = { name: "network_error" };
-    }
-
-    if (uploadError) {
-      logListingFailure("image-upload", uploadError.name);
-      const cleaned = await cleanupIncompleteListing({
-        supabase,
-        listingId,
-        uploadedPaths,
-      });
-
-      return actionState(
-        submissionId,
-        cleaned
-          ? "An image could not be uploaded. Your listing was not published; please try again."
-          : "An image could not be uploaded, and cleanup is still pending. Refresh My Items before trying again.",
-        { images: "Image upload failed. Check your connection and try again." },
-      );
+  for (const path of uploadedPaths) {
+    if (!(await readPrivateImage(supabase.storage.from("listing-images"), path))) {
+      const cleaned = await cleanupIncompleteListing({ supabase, listingId, uploadedPaths });
+      return actionState(submissionId, cleaned ? "An uploaded image is invalid. Choose valid images and try again." : "An image could not be verified. Check My Items before trying again.",
+        { images: "Use JPEG, PNG, or WebP images no larger than 5 MB with matching file contents." });
     }
   }
 
@@ -351,17 +320,11 @@ export async function createListing(
 
   if (imageRowsError) {
     logListingFailure("image-records", imageRowsError.code);
-    const cleaned = await cleanupIncompleteListing({
-      supabase,
-      listingId,
-      uploadedPaths,
-    });
-
+    // A duplicate or lost response may be another finalize request committing.
+    // Do not destroy its draft or images while its outcome is uncertain.
     return actionState(
       submissionId,
-      cleaned
-        ? genericFailureMessage
-        : "We couldn't finish publishing, and cleanup is still pending. Refresh My Items before trying again.",
+      "We couldn't confirm image registration. Check My Items before submitting again.",
     );
   }
 
@@ -422,4 +385,15 @@ export async function createListing(
   }
 
   redirectToCreatedListing(publishedListingId);
+}
+
+export async function cancelListingUpload(listingId: string, submissionId: string, paths: string[]) {
+  if (!submissionTokenSchema.safeParse(listingId).success || !submissionTokenSchema.safeParse(submissionId).success ||
+    !Array.isArray(paths) || paths.length > 5 || paths.some((path) => typeof path !== "string")) return false;
+  const { supabase, user } = await requireVerifiedActiveStudent("/sell");
+  if (paths.some((path) => !isOwnedPrivateImagePath(path, user.id, listingId, "listing"))) return false;
+  const { data: draft, error } = await supabase.from("listings").select("id, status")
+    .eq("id", listingId).eq("seller_id", user.id).eq("submission_token", submissionId).maybeSingle();
+  if (error || draft?.status !== "draft") return false;
+  return cleanupIncompleteListing({ supabase, listingId, uploadedPaths: paths });
 }

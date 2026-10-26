@@ -9,9 +9,12 @@ export const APPLICATION_PUBLIC_VARIABLES = [
 ] as const;
 // Exact documented Next.js framework metadata, not an arbitrary prefix bypass.
 // https://vercel.com/docs/environment-variables/framework-environment-variables
+// Vercel also injects public analytics/Speed Insights routing configuration:
+// https://vercel.com/docs/analytics/package#dynamic-configuration
 export const VERCEL_PUBLIC_VARIABLES = ["ENV", "TARGET_ENV", "URL", "BRANCH_URL", "PROJECT_PRODUCTION_URL", "HASH_SALT",
   "GIT_PROVIDER", "GIT_REPO_SLUG", "GIT_REPO_OWNER", "GIT_REPO_ID", "GIT_COMMIT_REF", "GIT_COMMIT_SHA",
-  "GIT_COMMIT_MESSAGE", "GIT_COMMIT_AUTHOR_LOGIN", "GIT_COMMIT_AUTHOR_NAME", "GIT_PULL_REQUEST_ID"]
+  "GIT_COMMIT_MESSAGE", "GIT_COMMIT_AUTHOR_LOGIN", "GIT_COMMIT_AUTHOR_NAME", "GIT_PULL_REQUEST_ID",
+  "OBSERVABILITY_CLIENT_CONFIG"]
   .map((name) => `NEXT_PUBLIC_VERCEL_${name}`);
 const loopback = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const operatorVariable = /^(?:(?:(?:STAGING|PRODUCTION|QA)_)?SUPABASE_(?:ACCESS_TOKEN|MANAGEMENT_TOKEN|SERVICE_ROLE_KEY|SECRET_KEY|DB_PASSWORD|DATABASE_URL)|(?:STAGING|PRODUCTION|QA)_(?:MANAGEMENT_TOKEN|SERVICE_ROLE_KEY|SECRET_KEY)|(?:(?:STAGING|PRODUCTION|QA)_)?(?:DATABASE_URL|DB_PASSWORD|DATABASE_PASSWORD)|SMTP_(?:PASSWORD|PASS))$/;
@@ -45,7 +48,8 @@ export function validateDeploymentEnvironment(env: Environment) {
     if (privileged) throw new Error("Privileged credentials must never be exposed through public environment variables.");
     // Vercel's public deployment metadata is not an application credential.
     if (!(APPLICATION_PUBLIC_VARIABLES as readonly string[]).includes(name) && !VERCEL_PUBLIC_VARIABLES.includes(name)) {
-      throw new Error("Unreviewed public environment variable; use the application's existing variable names and never expose private credentials.");
+      const publicName = /^[A-Z][A-Z0-9_]{0,100}$/.test(name) ? name : "[invalid variable name]";
+      throw new Error(`Unreviewed public environment variable ${publicName}; use the application's existing variable names and never expose private credentials.`);
     }
   }
   if (env.EMAIL_CONFIRMATION_MODE !== undefined && !["code", "link"].includes(env.EMAIL_CONFIRMATION_MODE)) throw new Error("EMAIL_CONFIRMATION_MODE must be code or link.");

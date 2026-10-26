@@ -5,14 +5,34 @@ import { useActionState, useEffect, useState } from "react";
 
 import { FormNotification } from "@/components/form-notification";
 
-import { submitStudentVerification, type VerificationActionState } from "./actions";
+import { prepareVerificationUpload, submitStudentVerification, type VerificationActionState } from "./actions";
 import { isSupportedSchoolIdImage } from "./validation";
+import { uploadPrivateImages, validateDirectImages } from "@/features/uploads/direct-upload";
+import { PRIVATE_IMAGE_EXTENSIONS } from "@/features/uploads/private-images";
 
 const initialState: VerificationActionState = { message: null };
 
+async function verifyWithDirectUpload(previous: VerificationActionState, formData: FormData): Promise<VerificationActionState> {
+  const file = formData.get("schoolId");
+  formData.delete("schoolId");
+  if (!(file instanceof File) || !(await validateDirectImages([file], 1))) {
+    return { message: "Choose a valid JPEG, PNG, or WebP image no larger than 5 MB." };
+  }
+  const prepared = await prepareVerificationUpload(formData);
+  if (!prepared.upload) return prepared;
+  const { ownerId, verificationId } = prepared.upload;
+  const path = `${ownerId}/${verificationId}/student-id.${PRIVATE_IMAGE_EXTENSIONS[file.type]}`;
+  if (!(await uploadPrivateImages("student-verifications", [path], [file]))) {
+    return { message: "We couldn't upload your school ID. Check your connection and retry." };
+  }
+  formData.set("verificationId", verificationId);
+  formData.set("documentPath", path);
+  return submitStudentVerification(previous, formData);
+}
+
 export function VerificationForm() {
   const [state, formAction, pending] = useActionState(
-    submitStudentVerification,
+    verifyWithDirectUpload,
     initialState,
   );
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -43,7 +63,7 @@ export function VerificationForm() {
   }
 
   return (
-    <form action={formAction} id="verification-form" className="space-y-5">
+    <form action={formAction} id="verification-form" aria-busy={pending} className="space-y-5">
       <section className="rounded-xl border border-[#c4c5d5] bg-white p-5 shadow-sm sm:p-7">
         <h2 className="text-xl font-bold">School ID</h2>
         <p className="mt-2 text-sm leading-6 text-[#444653]">

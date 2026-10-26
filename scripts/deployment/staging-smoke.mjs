@@ -6,6 +6,7 @@ import { chromium } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import { registry, vercelApi } from "./vercel.mjs";
 import { assertStagingProject } from "./staging.mjs";
+import { testStagingPrivateUploads } from "./staging-uploads.mjs";
 
 const origin = registry.staging.appOrigin;
 const database = `https://${registry.staging.supabaseProjectRef}.supabase.co`;
@@ -49,7 +50,7 @@ async function main() {
   assert.equal(deployment.readyState, "READY");
   assert.equal(deployment.meta?.githubCommitSha, input.sha);
   assert.equal(project.targets?.production?.id, deployment.id, "Smoke must test the canonical deployment, not an older alias.");
-  let checks = 0, phase = "HTTPS and hosting protection", browser, client, summary;
+  let checks = 0, phase = "HTTPS and hosting protection", browser, client, summary, uploads;
   const contexts = [];
   const failureCounts = { browserErrors: 0, hydrationErrors: 0, serverErrors: 0, productionRequests: 0 };
   const check = (condition) => { assert.ok(condition); checks += 1; };
@@ -145,13 +146,18 @@ async function main() {
       } else {
         for (const route of ["/marketplace", "/sell", "/messages", "/reservations", "/admin"]) await visit(page, route, destination);
       }
+      if (role === "seller") {
+        phase = "synthetic private 5 MiB uploads and listing edit";
+        uploads = await testStagingPrivateUploads(page, input, check);
+        phase = "authenticated SSR, Server Actions and role isolation";
+      }
       await page.getByRole("button", { name: "Log Out", exact: true }).first().click();
       await page.waitForURL((url) => url.origin === origin && url.pathname === "/login");
       await visit(page, "/profile", "/login");
     }
     check(Object.values(failureCounts).every((count) => count === 0));
     summary = { status: "passed", sha: input.sha, deploymentId: input.deploymentId, origin,
-      checks, roles: roles.length, failureCounts, executedAt: new Date().toISOString(), externalEmailDelivery: "not_run", productionDeploymentEnabled: false };
+      checks, roles: roles.length, failureCounts, uploads, executedAt: new Date().toISOString(), externalEmailDelivery: "not_run", productionDeploymentEnabled: false };
   } catch {
     console.log(JSON.stringify({ status: "failed", phase, checks, failureCounts, privateDetailsWithheld: true, productionDeploymentEnabled: false }));
     process.exitCode = 1;

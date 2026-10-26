@@ -37,6 +37,28 @@ import {
 import { createListing, type CreateListingState } from "./actions";
 import { SellImagesSection } from "./_components/sell-images-section";
 import { useSellImages } from "./_hooks/use-sell-images";
+import { uploadPrivateImages, validateDirectImages } from "@/features/uploads/direct-upload";
+import { PRIVATE_IMAGE_EXTENSIONS } from "@/features/uploads/private-images";
+import { cancelListingUpload, prepareListingUpload } from "./actions";
+
+async function publishWithDirectUploads(previous: CreateListingState, formData: FormData): Promise<CreateListingState> {
+  const files = formData.getAll("images").filter((value): value is File => value instanceof File);
+  formData.delete("images");
+  if (!(await validateDirectImages(files))) return { ...previous, message: "Choose valid product images.", fieldErrors: { images: "Use 1–5 JPEG, PNG, or WebP images, each no larger than 5 MB." } };
+  const prepared = await prepareListingUpload(previous, formData);
+  if (!prepared.upload) return prepared;
+  const { listingId, ownerId } = prepared.upload;
+  const paths = files.map((file) => `${ownerId}/${listingId}/${crypto.randomUUID()}.${PRIVATE_IMAGE_EXTENSIONS[file.type]}`);
+  if (!(await uploadPrivateImages("listing-images", paths, files))) {
+    const cleaned = await cancelListingUpload(listingId, prepared.submissionId, paths);
+    return { ...previous, message: cleaned ? "An image could not be uploaded. Your listing was not published; please try again." : "Upload failed and cleanup is pending. Check My Items before trying again.", fieldErrors: { images: "Check your connection and retry." } };
+  }
+  const completion = new FormData();
+  completion.set("submissionToken", prepared.submissionId);
+  completion.set("listingId", listingId);
+  completion.set("imagePaths", JSON.stringify(paths));
+  return createListing(previous, completion);
+}
 
 type SellFormProps = {
   categories: ListingCategoryOption[];
@@ -86,7 +108,7 @@ export function SellForm({
     submissionId,
   };
   const [state, formAction, pending] = useActionState(
-    createListing,
+    publishWithDirectUploads,
     initialState,
   );
   const [title, setTitle] = useState("");
