@@ -45,7 +45,7 @@ export function ReservationSummaryCard({
               className="object-cover"
             />
           ) : (
-            <div className="flex size-full min-h-44 items-center justify-center text-sm text-[#747685]">
+            <div className="flex size-full min-h-44 items-center justify-center text-sm text-[#5b6070]">
               No image available
             </div>
           )}
@@ -54,7 +54,7 @@ export function ReservationSummaryCard({
         <div className="min-w-0 p-5">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-xs font-bold uppercase tracking-[0.08em] text-[#747685]">
+              <p className="text-xs font-bold uppercase tracking-[0.08em] text-[#5b6070]">
                 {reservation.viewerRole === "seller" ? "Selling" : "Buying"}
               </p>
               {reservation.listing.canView ? (
@@ -103,7 +103,7 @@ export function ReservationSummaryCard({
                   <VerificationBadge />
                 </div>
               )}
-              <time dateTime={reservation.createdAt} className="mt-1 block text-xs text-[#747685]">
+              <time dateTime={reservation.createdAt} className="mt-1 block text-xs text-[#5b6070]">
                 Requested {formatDate(reservation.createdAt)}
               </time>
             </div>

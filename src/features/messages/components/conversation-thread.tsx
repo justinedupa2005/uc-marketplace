@@ -406,7 +406,7 @@ export function ConversationThread({
                   {showDateSeparator && (
                     <div
                       role="separator"
-                      className="flex items-center gap-3 py-2 text-xs font-medium text-[#747685]"
+                      className="flex items-center gap-3 py-2 text-xs font-medium text-[#5b6070]"
                     >
                       <span className="h-px flex-1 bg-[#e1e2ea]" />
                       <span suppressHydrationWarning>
@@ -450,7 +450,7 @@ export function ConversationThread({
                           className={`mt-1.5 flex items-center gap-2 text-[11px] ${
                             isMine
                               ? "justify-end text-white/75"
-                              : "text-[#747685]"
+                              : "text-[#5b6070]"
                           }`}
                         >
                           <MessageTime value={message.createdAt} />
@@ -480,7 +480,7 @@ export function ConversationThread({
             <p className="mt-3 text-sm font-semibold text-[#444653]">
               No messages yet
             </p>
-            <p className="mt-1 text-xs text-[#747685]">
+            <p className="mt-1 text-xs text-[#5b6070]">
               Say hello and ask about the item.
             </p>
           </div>
@@ -538,10 +538,10 @@ export function ConversationThread({
             </button>
           </div>
           <div className="mt-1.5 flex min-h-5 items-start justify-between gap-3 px-1 text-xs">
-            <p id="message-composer-help" className="text-[#747685]">
+            <p id="message-composer-help" className="text-[#5b6070]">
               Enter to send · Shift+Enter for a new line
             </p>
-            <span className="shrink-0 text-[#747685]">
+            <span className="shrink-0 text-[#5b6070]">
               {body.length.toLocaleString("en-US")}/{MESSAGE_MAX_LENGTH.toLocaleString("en-US")}
             </span>
           </div>

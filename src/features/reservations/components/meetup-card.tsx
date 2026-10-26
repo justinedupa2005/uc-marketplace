@@ -24,7 +24,7 @@ export function MeetupCard({ meetup }: { meetup: ReservationMeetup }) {
 
       <dl className="mt-5 space-y-4 text-sm">
         <div>
-          <dt className="font-medium text-[#747685]">When</dt>
+          <dt className="font-medium text-[#5b6070]">When</dt>
           <dd className="mt-1 font-bold text-[#121c2a]">
             <time dateTime={meetup.scheduledAt}>
               {formatMeetupDate(meetup.scheduledAt)}
@@ -32,7 +32,7 @@ export function MeetupCard({ meetup }: { meetup: ReservationMeetup }) {
           </dd>
         </div>
         <div>
-          <dt className="font-medium text-[#747685]">Public location</dt>
+          <dt className="font-medium text-[#5b6070]">Public location</dt>
           <dd className="mt-1 font-bold text-[#121c2a]">{meetup.locationName}</dd>
           {meetup.locationDetails && (
             <dd className="mt-1 whitespace-pre-wrap text-[#444653]">
@@ -42,7 +42,7 @@ export function MeetupCard({ meetup }: { meetup: ReservationMeetup }) {
         </div>
         {meetup.notes && (
           <div>
-            <dt className="font-medium text-[#747685]">Notes</dt>
+            <dt className="font-medium text-[#5b6070]">Notes</dt>
             <dd className="mt-1 whitespace-pre-wrap text-[#444653]">
               {meetup.notes}
             </dd>

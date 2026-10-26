@@ -45,7 +45,7 @@ function ParticipantCard({
 }) {
   return (
     <div className="rounded-xl border border-[#e1e2ea] bg-[#f9f9ff] p-4">
-      <p className="text-xs font-bold uppercase tracking-[0.08em] text-[#747685]">
+      <p className="text-xs font-bold uppercase tracking-[0.08em] text-[#5b6070]">
         {label}
       </p>
       <div className="mt-3 flex items-center gap-3">
@@ -65,7 +65,7 @@ function ParticipantCard({
         </div>
         <div className="min-w-0">
           <p className="truncate font-bold">
-            {student.name} {isCurrentUser && <span className="font-normal text-[#747685]">(you)</span>}
+            {student.name} {isCurrentUser && <span className="font-normal text-[#5b6070]">(you)</span>}
           </p>
           {student.isVerified && (
             <div className="mt-1.5">
@@ -114,7 +114,7 @@ export default async function ReservationDetailsPage({
 
         <header className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-sm font-bold uppercase tracking-[0.08em] text-[#747685]">
+            <p className="text-sm font-bold uppercase tracking-[0.08em] text-[#5b6070]">
               {reservation.viewerRole === "seller" ? "Selling" : "Buying"}
             </p>
             <h1 className="mt-1 text-3xl font-bold tracking-[-0.02em] text-[#002576] sm:text-4xl">
@@ -139,7 +139,7 @@ export default async function ReservationDetailsPage({
                       className="object-cover"
                     />
                   ) : (
-                    <div className="flex size-full min-h-56 items-center justify-center text-sm text-[#747685]">
+                    <div className="flex size-full min-h-56 items-center justify-center text-sm text-[#5b6070]">
                       No image available
                     </div>
                   )}
@@ -204,14 +204,14 @@ export default async function ReservationDetailsPage({
                   {reservation.message}
                 </p>
               ) : (
-                <p className="mt-3 text-sm text-[#747685]">
+                <p className="mt-3 text-sm text-[#5b6070]">
                   No message was included with this request.
                 </p>
               )}
               <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
                 {timeline.map(([label, value]) => (
                   <div key={label}>
-                    <dt className="text-[#747685]">{label}</dt>
+                    <dt className="text-[#5b6070]">{label}</dt>
                     <dd className="mt-1 font-semibold">
                       <time dateTime={value}>{formatDate(value)}</time>
                     </dd>
