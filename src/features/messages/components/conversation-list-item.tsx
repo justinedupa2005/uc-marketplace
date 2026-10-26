@@ -67,7 +67,7 @@ export function ConversationListItem({
             className={`mt-2 truncate text-sm ${
               conversation.unreadCount > 0
                 ? "font-semibold text-[#121c2a]"
-                : "text-[#747685]"
+                : "text-[#5b6070]"
             }`}
           >
             {conversation.lastMessageBody ?? "No messages yet — say hello."}
@@ -81,7 +81,7 @@ export function ConversationListItem({
             className={`text-xs ${
               conversation.unreadCount > 0
                 ? "font-semibold text-[#002576]"
-                : "text-[#747685]"
+                : "text-[#5b6070]"
             }`}
           />
           {conversation.unreadCount > 0 && (

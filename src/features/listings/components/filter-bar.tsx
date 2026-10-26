@@ -29,7 +29,7 @@ export function FilterBar({
         <h2 className="text-lg font-semibold leading-7 text-[#121c2a]">
           Marketplace Listings
         </h2>
-        <p className="text-xs text-[#747685]" aria-live="polite">
+        <p className="text-xs text-[#5b6070]" aria-live="polite">
           {totalCount.toLocaleString("en-PH")} {totalCount === 1 ? "listing" : "listings"} found
         </p>
       </div>

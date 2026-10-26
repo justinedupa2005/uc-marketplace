@@ -14,6 +14,7 @@
     "db:types:check": "node scripts/staging/types.mjs",
     "staging:audit": "node scripts/staging/audit.mjs",
     "staging:acceptance": "node scripts/staging/acceptance.mjs",
+    "staging:e2e": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/staging/e2e.mjs",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
@@ -46,6 +47,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "axe-core": "4.13.0",
     "@electric-sql/pglite": "^0.5.8",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",

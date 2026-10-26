@@ -37,7 +37,7 @@ export default async function ConversationPage({
         size="lg"
       />
       <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#747685]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#5b6070]">
           About this listing
         </p>
         <p className="mt-1 truncate text-sm font-bold text-[#121c2a] sm:text-base">

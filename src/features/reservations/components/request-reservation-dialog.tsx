@@ -135,7 +135,7 @@ export function RequestReservationDialog({
                   className="object-cover"
                 />
               ) : (
-                <div className="flex size-full items-center justify-center text-xs text-[#747685]">
+                <div className="flex size-full items-center justify-center text-xs text-[#5b6070]">
                   No image
                 </div>
               )}
@@ -155,7 +155,7 @@ export function RequestReservationDialog({
           </div>
 
           <label htmlFor="reservation-message" className="mt-5 block text-sm font-semibold">
-            Message to seller <span className="font-normal text-[#747685]">(optional)</span>
+            Message to seller <span className="font-normal text-[#5b6070]">(optional)</span>
           </label>
           <Textarea
             id="reservation-message"
@@ -167,7 +167,7 @@ export function RequestReservationDialog({
             placeholder="For example: I can meet near the library tomorrow afternoon."
             className="mt-2"
           />
-          <p className="mt-1 text-right text-xs text-[#747685]">
+          <p className="mt-1 text-right text-xs text-[#5b6070]">
             {message.length}/{RESERVATION_MESSAGE_MAX_LENGTH}
           </p>
 

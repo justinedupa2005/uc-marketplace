@@ -185,7 +185,7 @@ export function MeetupDialog({
           />
 
           <label htmlFor={`meetup-details-${reservationId}`} className="mt-5 block text-sm font-semibold">
-            Meeting point details <span className="font-normal text-[#747685]">(optional)</span>
+            Meeting point details <span className="font-normal text-[#5b6070]">(optional)</span>
           </label>
           <Input
             id={`meetup-details-${reservationId}`}
@@ -209,12 +209,12 @@ export function MeetupDialog({
             disabled={pending}
             className="mt-2"
           />
-          <p className="mt-2 text-xs leading-5 text-[#747685]">
+          <p className="mt-2 text-xs leading-5 text-[#5b6070]">
             Enter Philippine time (UTC+8). It is saved with its timezone.
           </p>
 
           <label htmlFor={`meetup-notes-${reservationId}`} className="mt-5 block text-sm font-semibold">
-            Notes <span className="font-normal text-[#747685]">(optional)</span>
+            Notes <span className="font-normal text-[#5b6070]">(optional)</span>
           </label>
           <Textarea
             id={`meetup-notes-${reservationId}`}

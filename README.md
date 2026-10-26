@@ -44,6 +44,12 @@ Automatic Git deployments remain off; temporary test bypasses are revoked and
 the production release block is unchanged. External SMTP acceptance is still
 deferred.
 
+Step 8 adds [deployed end-to-end acceptance](docs/deployed-e2e-testing.md) via
+`npm run staging:e2e`: run-owned accounts, full hosted purchase workflow,
+direct-API security, concurrent reservation tests and accessibility scans.
+Real inbox, physical-device and screen-reader acceptance remain separate gates;
+an automated pass does not enable production or complete those manual checks.
+
 The app uses the existing `NEXT_PUBLIC_APP_URL` and
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` names; do not add URL/key aliases.
 Database setup, migration, and security-check instructions live in
