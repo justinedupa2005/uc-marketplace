@@ -52,3 +52,20 @@ test("rejected targets cannot read credentials or initiate a request", async () 
   await assert.rejects(writeVercelOnce({ ...operation(), endpoint: "/v13/deployments?redirect=evil" }, token(), async () => { calls += 1; }));
   assert.equal(calls, 0);
 });
+
+test("temporary staging bypass uses the documented v1 generation/revocation contract without changing protection", () => {
+  const endpoint = `/v1/projects/${registry.staging.vercelProjectId}/protection-bypass?teamId=${registry.staging.vercelTeamId}`;
+  const generate = { endpoint, method: "PATCH", body: { generate: { note: "Temporary synthetic staging acceptance" } } };
+  assert.doesNotThrow(() => assertVercelWrite(generate));
+  assert.doesNotThrow(() => assertVercelWrite({ ...generate, body: { revoke: { secret: "a".repeat(32), regenerate: false } } }));
+  for (const patch of [
+    { endpoint: endpoint.replace("/v1/", "/v10/") },
+    { endpoint: endpoint.replace(registry.staging.vercelProjectId, registry.production.vercelProjectId) },
+    { body: { generate: { secret: "a".repeat(32), note: "Do not send a custom secret for an OAuth CLI token" } } },
+    { body: { revoke: { secret: "a".repeat(32), regenerate: true } } },
+    { body: { revoke: { secret: "bad", regenerate: false } } },
+    { body: { generate: { note: "a".repeat(101) } } },
+    { body: { update: { secret: "a".repeat(32), isEnvVar: true } } },
+    { body: { generate: { note: "Synthetic" }, revoke: { secret: "a".repeat(32), regenerate: false } } },
+  ]) assert.throws(() => assertVercelWrite({ ...generate, ...patch }));
+});
