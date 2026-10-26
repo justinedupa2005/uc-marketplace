@@ -91,11 +91,26 @@ test("operator credentials and public secret/alias variables are rejected withou
 
 test("documented Vercel framework metadata is allowed without allowing credential aliases", () => {
   const values = application();
-  const metadata = Object.fromEntries(VERCEL_PUBLIC_VARIABLES.map((name) => [name, "public-metadata"]));
-  assert.equal(VERCEL_PUBLIC_VARIABLES.length, 17);
+  const metadata = Object.fromEntries(VERCEL_PUBLIC_VARIABLES.map((name) => [name, name === "NEXT_PUBLIC_VERCEL_PROJECT_ID" ? registry.staging.vercelProjectId : "public-metadata"]));
+  assert.equal(VERCEL_PUBLIC_VARIABLES.length, 21);
   assert.equal(validateDeploymentEnvironment({ ...values, ...metadata }).mode, "staging");
   assert.throws(() => validateDeploymentEnvironment({ ...values, NEXT_PUBLIC_VERCEL_PRIVATE_TOKEN: "private-test-config" }));
   assert.throws(() => validateDeploymentEnvironment({ ...values, NEXT_PUBLIC_VERCEL_GIT_COMMIT_MESSAGE: values.AUTH_RECOVERY_SECRET }));
+});
+
+test("the builder's complete prefixed system contract is accepted but public credential aliases and wrong project IDs are not", () => {
+  // Match getPrefixedEnvVars()'s explicit non-secret system list, independently
+  // of our allowlist. Its GIT_* family stays restricted to reviewed names.
+  const system = Object.fromEntries(["URL", "ENV", "TARGET_ENV", "REGION", "BRANCH_URL", "PROJECT_PRODUCTION_URL", "DEPLOYMENT_ID", "PROJECT_ID"]
+    .map((name) => [`NEXT_PUBLIC_VERCEL_${name}`, name === "PROJECT_ID" ? registry.staging.vercelProjectId : "public-system-metadata"]));
+  assert.equal(validateDeploymentEnvironment({ ...application(), ...system, NEXT_PUBLIC_VERCEL_GIT_PREVIOUS_SHA: "a".repeat(40), VERCEL: "1", VERCEL_ENV: "production" }).mode, "staging");
+  for (const key of ["NEXT_PUBLIC_VERCEL_OIDC_TOKEN", "NEXT_PUBLIC_VERCEL_AUTOMATION_BYPASS_SECRET", "NEXT_PUBLIC_VERCEL_GIT_PRIVATE_KEY"]) {
+    assert.throws(() => validateDeploymentEnvironment({ ...application(), [key]: "inert-unreviewed-value" }));
+  }
+  assert.throws(() => validateDeploymentEnvironment({ ...application(), NEXT_PUBLIC_VERCEL_PROJECT_ID: registry.production.vercelProjectId }), /Vercel project does not match/);
+  assert.throws(() => validateDeploymentEnvironment({ ...application(), VERCEL_PROJECT_ID: registry.staging.vercelProjectId, NEXT_PUBLIC_VERCEL_PROJECT_ID: "another-project" }), /Vercel project does not match/);
+  assert.throws(() => validateDeploymentEnvironment({ ...application(), NEXT_PUBLIC_UNKNOWN_A: "value-a", NEXT_PUBLIC_UNKNOWN_B: "value-b" }),
+    (error) => error.message.includes("NEXT_PUBLIC_UNKNOWN_A") && error.message.includes("NEXT_PUBLIC_UNKNOWN_B") && !error.message.includes("value-a") && !error.message.includes("value-b"));
 });
 
 test("Vercel-injected public observability routing does not block a real hosted build or allow private aliases", () => {
@@ -160,6 +175,26 @@ test("real Next configuration blocks a fully specified production build before d
   assert.ok(!result.error, "The configuration check must finish, not time out.");
   assert.notEqual(result.status, 0);
   assert.ok(`${result.stdout}${result.stderr}`.includes("Production deployment is disabled"), "The release block must be enforced by actual Next configuration.");
+});
+
+test("actual Next configuration loads in hosted staging with the complete builder-prefixed public system metadata", { timeout: 60_000 }, () => {
+  const values = application();
+  const metadata = {
+    NEXT_PUBLIC_VERCEL_PROJECT_ID: registry.staging.vercelProjectId,
+    NEXT_PUBLIC_VERCEL_DEPLOYMENT_ID: "dpl_inertRegressionFixture",
+    NEXT_PUBLIC_VERCEL_REGION: "iad1", NEXT_PUBLIC_VERCEL_URL: "inert-build.vercel.app",
+    NEXT_PUBLIC_VERCEL_ENV: "production", NEXT_PUBLIC_VERCEL_TARGET_ENV: "production",
+    NEXT_PUBLIC_VERCEL_BRANCH_URL: "inert-staging-branch.vercel.app",
+    NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL: "uc-online-shop-staging.vercel.app",
+    NEXT_PUBLIC_VERCEL_OBSERVABILITY_CLIENT_CONFIG: JSON.stringify({ analytics: { scriptSrc: "/_vercel/insights/script.js" } }),
+  };
+  const result = spawnSync(process.execPath, ["node_modules/next/dist/bin/next", "typegen"], {
+    cwd: fileURLToPath(new URL("../", import.meta.url)), env: { ...process.env, ...values, ...metadata,
+      VERCEL: "1", VERCEL_ENV: "production", VERCEL_PROJECT_ID: registry.staging.vercelProjectId, NEXT_TELEMETRY_DISABLED: "1" },
+    encoding: "utf8", windowsHide: true, timeout: 45_000,
+  });
+  assert.ok(!result.error, "The actual hosted configuration must load within the bounded test.");
+  assert.equal(result.status, 0, "Provider public metadata must not block Next configuration; private output withheld.");
 });
 
 test("build and runtime both invoke the same validation and release block", async () => {
