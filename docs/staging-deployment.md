@@ -223,6 +223,32 @@ preflight failure is **not** counted as a successful full-stack test. The fresh
 local production build and targeted regressions pass; CI/hosted acceptance for
 the corrected source must still be recorded after execution.
 
+### Full builder metadata follow-up
+
+PR #5 merged as `d77f43d6e9fbda13e053fd333df22155b62a5b96`; its exact push
+CI [run 40252493122](https://github.com/justinedupa2005/uc-marketplace/actions/runs/40252493122)
+passed all required gates, and all **439** local regressions passed. Seven local
+process-control tests initially lacked sandbox permission to stop their own
+workers; rerunning with that permission passed, without disabling tests. The
+final staging plan again confirmed 20 migrations, no drift and 129 assertions.
+
+Deployment `dpl_87uLJ8sPB4sFhbivqaAKJi4LRCCD` still stopped before compilation:
+Vercel's builder also creates `NEXT_PUBLIC_VERCEL_PROJECT_ID`, not present in its
+deployment API's environment-name list. The complete builder implementation was
+reviewed both in the installed CLI package and [upstream source](https://github.com/vercel/vercel/blob/main/packages/build-utils/src/get-prefixed-env-vars.ts).
+The explicit allowlist now includes its public project/deployment IDs and region,
+plus the documented previous Git SHA, for **21** exact names. It still rejects
+OIDC, automation bypass, arbitrary Git credential aliases and privileged values.
+The public project ID must also match the registered environment. New coverage
+checks the independent eight-variable builder contract and loads actual Next
+configuration with the hosted staging metadata. Unknown-name diagnostics report
+all bounded unreviewed names together, never values; no prefix wildcard is used.
+
+The isolated full-stack [run 40252740559](https://github.com/justinedupa2005/uc-marketplace/actions/runs/40252740559)
+tests the upload implementation at `d77f43d`; its result is pending at this
+checkpoint. Both failed deployment journals are retained; no request was retried
+and no temporary hosting bypass or production deployment has been created.
+
 References: [Next.js deployment](https://nextjs.org/docs/app/getting-started/deploying),
 [Vercel Git configuration](https://vercel.com/docs/project-configuration/git-configuration),
 [Vercel Git branch tracking](https://vercel.com/docs/git),
