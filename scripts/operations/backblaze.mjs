@@ -1,6 +1,32 @@
 import assert from "node:assert/strict";
 import { runId } from "./policy.mjs";
 
+export const b2SecretNames = Object.freeze(["B2_KEY_ID", "B2_APPLICATION_KEY", "B2_BUCKET_NAME", "B2_ENDPOINT"]);
+
+export function backblazeSecretStatus(source) {
+  // Only presence/formatting flags; no values, lengths, prefixes or hashes.
+  return Object.fromEntries(b2SecretNames.map(name => {
+    const value = source[name];
+    return [name, { present: typeof value === "string" && value.length > 0,
+      surroundingWhitespace: typeof value === "string" && value !== value.trim() }];
+  }));
+}
+
+export function backblazeConfiguration(source) {
+  const selected = {};
+  for (const name of b2SecretNames) {
+    assert.ok(typeof source[name] === "string" && source[name].trim().length > 0, `${name}_REQUIRED`);
+    // Credential alphabets cannot contain whitespace. Strip only accidental
+    // paste boundaries, never internal characters or the stored secret itself.
+    selected[name] = source[name].trim();
+  }
+  assert.match(selected.B2_KEY_ID, /^[a-zA-Z0-9]{10,100}$/, "B2_KEY_ID_INVALID");
+  assert.match(selected.B2_APPLICATION_KEY, /^[a-zA-Z0-9+/=_-]{20,200}$/, "B2_APPLICATION_KEY_INVALID");
+  assert.match(selected.B2_BUCKET_NAME, /^[a-zA-Z0-9][a-zA-Z0-9-]{4,61}[a-zA-Z0-9]$/, "B2_BUCKET_NAME_INVALID");
+  backblazeEndpoint(selected.B2_ENDPOINT);
+  return selected;
+}
+
 export function backblazeEndpoint(value) {
   assert.equal(typeof value, "string", "B2_ENDPOINT_REQUIRED");
   const url = new URL(value.includes("://") ? value : `https://${value}`);
@@ -53,10 +79,9 @@ async function privateJson(fetcher, url, init, authentication = false) {
   return JSON.parse(Buffer.concat(chunks).toString());
 }
 
-export async function verifyBackblaze(env, id, fetcher = fetch) {
+export async function verifyBackblaze(source, id, fetcher = fetch) {
+  const env = backblazeConfiguration(source);
   backblazeEndpoint(env.B2_ENDPOINT); // Validate before sending any credentials.
-  assert.match(env.B2_KEY_ID ?? "", /^[a-zA-Z0-9]{10,100}$/, "B2_KEY_ID_REQUIRED");
-  assert.ok(typeof env.B2_APPLICATION_KEY === "string" && /^[a-zA-Z0-9+/=_-]{20,200}$/.test(env.B2_APPLICATION_KEY), "B2_APPLICATION_KEY_REQUIRED");
   const authorized = await privateJson(fetcher, "https://api.backblazeb2.com/b2api/v4/b2_authorize_account", {
     headers: { Authorization: `Basic ${Buffer.from(`${env.B2_KEY_ID}:${env.B2_APPLICATION_KEY}`).toString("base64")}` },
   }, true);

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { backblazeEndpoint, syntheticRepository, verifyBackblaze } from "../scripts/operations/backblaze.mjs";
+import { readFile } from "node:fs/promises";
+import { backblazeEndpoint, syntheticRepository, verifyBackblaze, b2SecretNames, backblazeConfiguration, backblazeSecretStatus } from "../scripts/operations/backblaze.mjs";
 import { backblazeDrill } from "../scripts/operations/backblaze-drill.mjs";
 import { backblazeFailure, resticFailureCodes } from "../scripts/operations/diagnostics.mjs";
 import { command } from "../scripts/operations/process.mjs";
@@ -89,7 +90,7 @@ test("B2 HTTP errors distinguish authentication, metadata permission, forbidden 
 
 test("failed B2 preflight never initializes or writes an off-site repository and preserves a safe diagnostic", async () => {
   let writes = 0;
-  await assert.rejects(backblazeDrill({ OPS_B2_SYNTHETIC_CONFIRM: "synthetic-only" }, {
+  await assert.rejects(backblazeDrill({ ...env, OPS_B2_SYNTHETIC_CONFIRM: "synthetic-only" }, {
     verify: async () => { throw new Error("B2_SINGLE_BUCKET_KEY_REQUIRED\nDO_NOT_LOG"); }, execute: async () => { writes++; },
   }), error => error.message === "Backblaze synthetic drill failed." && !error.cause && error.diagnostic.failurePhase === "b2-preflight" &&
     error.diagnostic.failureCode === "B2_SINGLE_BUCKET_KEY_REQUIRED" && !JSON.stringify(error).includes("DO_NOT_LOG"));
@@ -106,10 +107,86 @@ test("restic diagnostics classify fixed failure categories without returning mat
 
 test("B2 repository failures identify their phase without revealing command stderr or continuing to backup", async () => {
   let calls = 0;
-  await assert.rejects(backblazeDrill({ OPS_B2_SYNTHETIC_CONFIRM: "synthetic-only" }, {
+  await assert.rejects(backblazeDrill({ ...env, OPS_B2_SYNTHETIC_CONFIRM: "synthetic-only" }, {
     verify: async () => ({ repository: "s3:https://s3.us-west-004.backblazeb2.com/synthetic-bucket/test-only", region: "us-west-004" }),
     execute: async (_binary, args) => { calls++; if (args[0] === "version") return Buffer.from("restic 0.19.1");
       throw Object.assign(new Error("DO_NOT_LOG private bucket/key"), { operationCodes: ["S3_ACCESS_DENIED", "DO_NOT_LOG"] }); },
   }), error => error.diagnostic.failurePhase === "repository-init" && error.diagnostic.operationCodes.join() === "S3_ACCESS_DENIED" && !JSON.stringify(error).includes("DO_NOT_LOG"));
   assert.equal(calls, 2);
+});
+
+test("B2 configuration trims paste boundaries without changing stored inputs or accepting internal whitespace", () => {
+  const wrapped = Object.fromEntries(Object.entries(env).map(([name, value]) => [name, `\r\n ${value} \n`]));
+  const before = { ...wrapped };
+  assert.deepEqual(backblazeConfiguration(wrapped), env);
+  assert.deepEqual(wrapped, before);
+  for (const name of b2SecretNames) assert.deepEqual(backblazeSecretStatus(wrapped)[name], { present: true, surroundingWhitespace: true });
+  assert.deepEqual(backblazeSecretStatus({ B2_KEY_ID: "DO_NOT_LOG\n", OTHER: "DO_NOT_LOG" }), {
+    B2_KEY_ID: { present: true, surroundingWhitespace: true }, B2_APPLICATION_KEY: { present: false, surroundingWhitespace: false },
+    B2_BUCKET_NAME: { present: false, surroundingWhitespace: false }, B2_ENDPOINT: { present: false, surroundingWhitespace: false },
+  });
+  assert.throws(() => backblazeConfiguration({ ...env, B2_KEY_ID: "synthetic KeyId" }), /B2_KEY_ID_INVALID/);
+  assert.throws(() => backblazeConfiguration({ ...env, B2_APPLICATION_KEY: "synthetic-key with-internal-whitespace" }), /B2_APPLICATION_KEY_INVALID/);
+});
+
+test("B2 configuration distinguishes missing input from invalid input before any API request", async () => {
+  let requests = 0;
+  for (const name of b2SecretNames) for (const value of [undefined, "", "\r\n "]) {
+    await assert.rejects(verifyBackblaze({ ...env, [name]: value }, id, async () => { requests++; }), error =>
+      backblazeFailure(error, "configuration").failureCode === `${name}_REQUIRED`);
+  }
+  for (const [name, value] of [["B2_KEY_ID", "invalid internal spaces"], ["B2_APPLICATION_KEY", "not:a:valid:application:key"]]) {
+    await assert.rejects(verifyBackblaze({ ...env, [name]: value }, id, async () => { requests++; }), error =>
+      backblazeFailure(error, "configuration").failureCode === `${name}_INVALID`);
+  }
+  assert.equal(requests, 0);
+});
+
+test("native B2 authentication receives exactly the normalized credential pair and selected bucket", async () => {
+  const wrapped = Object.fromEntries(Object.entries(env).map(([name, value]) => [name, `\n${value}\r\n`]));
+  let requests = 0;
+  const result = await verifyBackblaze(wrapped, id, async (_url, init) => {
+    requests++;
+    if (requests === 1) {
+      assert.equal(init.headers.Authorization, `Basic ${Buffer.from(`${env.B2_KEY_ID}:${env.B2_APPLICATION_KEY}`).toString("base64")}`);
+      return new Response(JSON.stringify(authorized));
+    }
+    assert.equal(JSON.parse(init.body).bucketName, env.B2_BUCKET_NAME);
+    return new Response(JSON.stringify({ buckets: [bucket] }));
+  });
+  assert.equal(requests, 2); assert.ok(result.repository.includes(`/${env.B2_BUCKET_NAME}/`));
+});
+
+test("the B2 drill passes the same normalized credentials to native preflight and restic without modifying the caller", async () => {
+  const wrapped = Object.fromEntries(Object.entries(env).map(([name, value]) => [name, `\n${value}\r\n`]));
+  const source = { ...wrapped, OPS_B2_SYNTHETIC_CONFIRM: "synthetic-only" }, before = { ...source };
+  let authenticated = false, resticChecked = false;
+  await assert.rejects(backblazeDrill(source, {
+    verify: async selected => {
+      assert.deepEqual(selected, env); authenticated = true;
+      return { repository: "s3:https://s3.us-west-004.backblazeb2.com/synthetic-bucket/test-only", region: "us-west-004" };
+    },
+    execute: async (_binary, args, options) => {
+      assert.equal(options.env.AWS_ACCESS_KEY_ID, env.B2_KEY_ID);
+      assert.equal(options.env.AWS_SECRET_ACCESS_KEY, env.B2_APPLICATION_KEY);
+      resticChecked = true;
+      if (args[0] === "version") return Buffer.from("restic 0.19.1");
+      throw new Error("Stop before any off-site writes.");
+    },
+  }), error => error.diagnostic.failurePhase === "repository-init");
+  assert.equal(authenticated, true); assert.equal(resticChecked, true); assert.deepEqual(source, before);
+});
+
+test("synthetic Backblaze is a protected direct job with four explicit step-only secret bindings, not a reusable workflow", async () => {
+  const workflow = (await readFile(new URL("../.github/workflows/security-qa.yml", import.meta.url), "utf8")).replaceAll("\r\n", "\n");
+  const marker = "\n  synthetic-backblaze:\n", index = workflow.indexOf(marker); assert.ok(index > 0);
+  const job = workflow.slice(index), credentialStep = job.slice(job.indexOf("      - name: Encrypt and restore only generated images"));
+  assert.match(job, /\n    environment: staging\n/);
+  assert.ok(!/^    uses:/m.test(job)); assert.ok(!/^\s+secrets:\s+inherit\s*$/m.test(job));
+  for (const name of b2SecretNames) {
+    const binding = name + ": ${{ secrets." + name + " }}";
+    assert.ok(credentialStep.includes(binding)); assert.equal(workflow.split(binding).length - 1, 1);
+    assert.ok(!job.slice(0, job.indexOf("      - name: Encrypt and restore only generated images")).includes("secrets." + name));
+  }
+  assert.ok(!workflow.slice(0, index).includes("secrets.B2_"));
 });
