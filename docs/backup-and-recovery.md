@@ -256,6 +256,8 @@ For a failed B2 run, inspect `failurePhase`, `failureCode` and `operationCodes`:
 
 | Fixed diagnostic | Operator review (do not broaden permissions or change privacy automatically) |
 | --- | --- |
+| `B2_KEY_ID_REQUIRED` / `B2_APPLICATION_KEY_REQUIRED` | Required input is absent or whitespace-only; check explicit step bindings and GitHub secret scopes |
+| `B2_KEY_ID_INVALID` / `B2_APPLICATION_KEY_INVALID` | A value was supplied but its format is invalid; verify the existing key field, not a key name/label, without regenerating it |
 | `B2_AUTHENTICATION_FAILED` | Check that the active application key and key ID belong together |
 | `B2_METADATA_PERMISSION_DENIED` | Confirm the key can read metadata for the selected bucket |
 | `B2_REQUEST_FORBIDDEN` | Review provider access restrictions and account/transaction caps |
@@ -269,6 +271,18 @@ For a failed B2 run, inspect `failurePhase`, `failureCode` and `operationCodes`:
 Each retry needs review of the failed phase first and the required staging
 environment approval. A failed drill is not a valid backup; retained partial
 synthetic artifacts, if any, are not an operational repository to adopt.
+
+The diagnostic follow-up ([run 40872772592](https://github.com/justinedupa2005/uc-marketplace/actions/runs/40872772592))
+failed before any B2 API request with `B2_KEY_ID_REQUIRED`. Read-only inspection
+confirmed all four repository secrets exist, no staging secret shadows them,
+and that exact run explicitly bound all four into the direct drill step (there
+is no reusable workflow or missing `secrets: inherit`). The credential log
+bindings have masked continuation lines; the old validator conflated missing
+values with formatting errors. Surrounding pasted whitespace is now stripped
+only in memory, consistently for both native authentication and restic/S3.
+Internal whitespace remains invalid. No stored secret is modified or regenerated.
+Receipts expose only boolean presence/surrounding-whitespace flags, never values,
+lengths or hashes. A new passing off-site receipt is still required.
 
 Before Step 9 is complete: verify B2 credentials/destination, approve key custody
 and retention, obtain separate authority before any non-synthetic capture,

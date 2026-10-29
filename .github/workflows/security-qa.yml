@@ -126,6 +126,9 @@ jobs:
         env:
           OPS_B2_SYNTHETIC_CONFIRM: synthetic-only
           OPS_RESTIC_BINARY: ${{ github.workspace }}/.qa/tools/restic-0.19.1/restic
+          # Direct job, not a reusable workflow: explicitly inject exactly
+          # these four repository secrets only into the credential-using step.
+          # No secrets: inherit or job-wide credentials for npm/tool installs.
           B2_ENDPOINT: ${{ secrets.B2_ENDPOINT }}
           B2_BUCKET_NAME: ${{ secrets.B2_BUCKET_NAME }}
           B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
