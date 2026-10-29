@@ -11,6 +11,7 @@ import {
 import { getSafeNextPath } from "@/lib/auth/redirects";
 import { RECOVERY_COOKIE_NAME } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
+import { reportOperationalEvent } from "@/lib/observability/events";
 
 const loginSchema = z.object({
   email: z.string().trim().email().max(254).transform((email) => email.toLowerCase()),
@@ -50,6 +51,7 @@ export async function login(
     const { error } = await supabase.auth.signInWithPassword(result.data);
 
     if (error) {
+      reportOperationalEvent("auth_request_failed", { operation: "login", code: error.code, status: error.status });
       if (
         error.code === "over_request_rate_limit" ||
         error.code === "over_email_send_rate_limit"

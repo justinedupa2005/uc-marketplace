@@ -11,6 +11,7 @@ import type { ProfileActionState } from "@/features/profiles/types";
 import { changePasswordSchema, getProfileFieldErrors, profileDetailsSchema } from "@/features/profiles/validation";
 import { parseAuthorizationProfile, requireActiveProfile, requireAuthenticatedProfile } from "@/lib/auth/authorization";
 import type { AppSupabaseClient } from "@/lib/supabase/types";
+import { reportOperationalEvent } from "@/lib/observability/events";
 
 function failure(message: string, fieldErrors?: Record<string, string[]>): ProfileActionState {
   return { status: "error", message, fieldErrors };
@@ -95,7 +96,10 @@ export async function uploadAvatar(_previous: ProfileActionState, formData: Form
     const extension = file.type === "image/jpeg" ? "jpg" : file.type === "image/png" ? "png" : "webp";
     const newPath = `${user.id}/${randomUUID()}.${extension}`;
     const { error: uploadError } = await supabase.storage.from("avatars").upload(newPath, file, { contentType: file.type, cacheControl: "3600", upsert: false });
-    if (uploadError) return failure("Unable to upload your profile photo. Please try again.");
+    if (uploadError) {
+      reportOperationalEvent("profile_upload_failed", { operation: "avatar" });
+      return failure("Unable to upload your profile photo. Please try again.");
+    }
     cleanup = { supabase, userId: user.id, path: newPath };
     let update = supabase.from("profiles").update({ avatar_path: newPath }).eq("id", user.id);
     update = current.avatar_path === null ? update.is("avatar_path", null) : update.eq("avatar_path", current.avatar_path);

@@ -13,6 +13,7 @@ import {
   reservationIdSchema,
 } from "@/features/reservations/validation";
 import { requireVerifiedActiveStudent } from "@/lib/auth/authorization";
+import { reportOperationalEvent } from "@/lib/observability/events";
 
 export type ReservationActionResult = {
   ok: boolean;
@@ -30,8 +31,8 @@ function logActionFailure(
   action: ReservationOperation | "conversation",
   error: DatabaseErrorLike | null,
 ) {
-  console.warn("Reservation action failed", {
-    action,
+  reportOperationalEvent("reservation_failed", {
+    operation: action,
     code: error?.code ?? "unknown",
   });
 }

@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import type { Database } from "@/types/database";
 import { filterSupabaseSessionCookies } from "@/lib/supabase/session-cookies";
 import { authCookieOptions } from "@/lib/supabase/cookie-options";
+import { observedSupabaseFetch } from "@/lib/observability/supabase-fetch";
 
 export async function createClient() {
   const cookieStore = await cookies();
@@ -25,6 +26,7 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
       cookieOptions: authCookieOptions(),
+      global: { fetch: observedSupabaseFetch(supabaseUrl) },
       cookies: {
         async getAll() {
           return (await filterSupabaseSessionCookies(cookieStore.getAll(), supabaseUrl)).cookies;

@@ -17,6 +17,14 @@
 /blob-report/
 /.qa/
 
+# Private recovery artifacts must never be committed or attached to CI.
+/backups/
+/.backups/
+/restic-repository/
+*.dump
+*.backup
+*.sql.gz
+
 # next.js
 /.next/
 /out/

@@ -158,10 +158,69 @@ surfaces. No rule is disabled or excluded, and layout/authorization is unchanged
 Local verification of the fix passed TypeScript, ESLint and **455** regression
 tests. All **20** migrations / **535** embedded security assertions passed;
 dependency review found zero vulnerabilities, and source/browser-bundle and
-secret-pattern checks passed. The new staging deployment and exact-source live
-retest are pending at this checkpoint; do not call the baseline a passing run.
+secret-pattern checks passed. At that initial checkpoint the new staging
+deployment and live retest were pending; the baseline remains a failed run.
 
 All temporary accounts, related records and files were removed using run-owned
 cleanup, and all test bypasses were revoked. The five shared staging identities,
 production and SMTP settings were not changed. Failed attempts remain available
 in ignored private evidence; they are not overwritten by subsequent passes.
+
+### Passing exact-source retest
+
+PR [#8](https://github.com/justinedupa2005/uc-marketplace/pull/8) merged normally
+through protected CI. Application and test-runner source
+**`b277d3e114d995613841f490f4dda971ed7762d9`** passed exact staging push
+[CI 40338693597](https://github.com/justinedupa2005/uc-marketplace/actions/runs/40338693597).
+That check included the lockfile install, TypeScript, ESLint, **455** regression
+tests, production build, dependency/secret/bundle security and migration checks.
+The pre-deployment read-only staging audit found **20** migrations applied,
+zero pending versions, no schema/grant drift and **129** passing native security
+assertions. No database migration or reset was needed or performed.
+
+The explicit staging-only deployment **`dpl_2hd2egyuPvJucmntUqjESjP8Wf5j`** is
+READY and canonical at <https://uc-online-shop-staging.vercel.app> (Vercel sign-in
+required). Its protected immutable URL is
+<https://uc-online-shop-staging-6bkf2hbxk-justinedupa2005s-projects.vercel.app>.
+The Next.js 16.4.3 build compiled successfully; the private build review found
+zero failure markers. All Deployments authentication and disabled automatic Git
+deployments remain in place. No local operator credentials were uploaded.
+
+Run **`9ac86d2d-7ba8-48bb-bd50-cc10a51f342d`** completed at
+**2026-10-26 22:39:11 PHT** with status **`automated_passed_manual_pending`**.
+The runner and deployed source matched exactly, and the runner worktree was
+clean. Every automated phase passed:
+
+| Evidence | Result |
+| --- | --- |
+| Hosted browser assertions | 326 passed |
+| Direct API/Storage authorization checks | 253 passed |
+| Real PostgreSQL barrier races | All 3 passed |
+| Realtime privacy/delivery scenarios | All 4 passed |
+| Desktop, touch-emulated and reflow accessibility scans | 16 scans; zero confirmed violations |
+| Browser / hydration / server / cross-environment failures | 0 / 0 / 0 / 0 |
+| Run-owned accounts, records and files | All 7 accounts and related temporary data removed |
+| Temporary hosting access bypass | Revoked; final staging/production bypass inventories both empty |
+
+The browser run covered verification rejection/resubmission/approval, direct
+self-approval denial, five-image publication and editing, search/filter/sort,
+favorites, two-way messages and the complete reservation/meetup/sale workflow.
+It also checked cross-account denials, active-session suspension, independent
+and shared-tab sessions, logout denial and invalid authentication callbacks.
+A separate read-only color probe found no contrast violations on the existing
+shared marketplace, conversation and accepted-reservation pages.
+
+Post-test verification confirmed the five shared synthetic accounts and their
+existing data were unchanged: 5 listings, 1 conversation, 2 messages, 2 favorites,
+1 reservation, 1 meetup and 4 verification records, with zero public tables
+missing RLS. Production remains protected, unconnected to Git, undeployed and
+release-disabled. No SMTP settings were changed and no emails were sent.
+A bounded private runtime review examined 50 entries and found zero errors or
+server failures; no raw logs were published.
+
+The manual checklist above is still pending. Incomplete axe color/ARIA checks
+and **3** small-touch-target review occurrences are not silently marked passed.
+Real inbox registration/recovery, physical Android/iOS, screen-reader use and
+manual visual/keyboard/zoom acceptance still require authorized human testing.
+This is a passing automated staging result, **not complete Step 8 or production
+release approval**. This evidence-only follow-up does not redeploy the app.

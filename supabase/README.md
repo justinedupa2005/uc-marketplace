@@ -4,6 +4,12 @@ Database changes are stored as forward-only SQL migrations in
 `supabase/migrations`. Never edit a migration after it has been applied to the
 remote project.
 
+Step 9 adds [backup/recovery procedures](../docs/backup-and-recovery.md) and
+[monitoring/incident response](../docs/monitoring-and-incidents.md). Database
+backups alone do not recover Storage image bytes. The new encrypted backup and
+local synthetic restore tools refuse production targets; no hosted restore or
+automatic backup/retention schedule is authorized by these instructions.
+
 Before deployment, complete the [CI and dependency-security release gate](../docs/ci-dependency-security.md).
 Local QA success does not certify a different GitHub commit or authorize hosted migrations.
 

@@ -11,6 +11,11 @@ on:
         required: false
         default: false
         type: boolean
+      synthetic_b2:
+        description: Test only generated images in a new private Backblaze prefix (staging only; no deployment)
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -88,3 +93,43 @@ jobs:
       - run: npm run qa:local
       # Keep private test artifacts off GitHub uploads. GitHub-hosted runner
       # disposal is separate from the launcher's scoped, non-destructive stop.
+
+  synthetic-backblaze:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging' && inputs.synthetic_b2
+    needs: local-security
+    environment: staging
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "22"
+          cache: npm
+      - run: node scripts/operations/verify-source.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - run: npm ci
+      - run: npm run ops:install-restic
+      - name: Recheck exact staging source before accessing Backblaze credentials
+        run: node scripts/operations/verify-source.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Encrypt and restore only generated images in a new private B2 prefix
+        run: npm run ops:drill:b2
+        env:
+          OPS_B2_SYNTHETIC_CONFIRM: synthetic-only
+          OPS_RESTIC_BINARY: ${{ github.workspace }}/.qa/tools/restic-0.19.1/restic
+          B2_ENDPOINT: ${{ secrets.B2_ENDPOINT }}
+          B2_BUCKET_NAME: ${{ secrets.B2_BUCKET_NAME }}
+          B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+      # No Supabase credentials, deployment, alert transport, raw diagnostics or
+      # artifact uploads. Only encrypted synthetic artifacts remain at the
+      # reported UUID prefix; existing repositories/lifecycles are untouched.

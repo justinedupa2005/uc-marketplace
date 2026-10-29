@@ -1,11 +1,14 @@
 # Protected Vercel staging deployment (Step 7)
 
 **Completed 2026-10-26:** the protected staging application is deployed and
-accepted. The immutable application source is
-`7f170f60c27314914fc0ccab2926d368a6aab454`; the final execution record below
-identifies its CI, deployment and hosted tests. Later operator/documentation-only
-commits do not replace that deployed artifact. Production remains disabled and
-external SMTP acceptance remains deferred.
+accepted. The initial Step 7 application source was
+`7f170f60c27314914fc0ccab2926d368a6aab454`; the historical execution record below
+identifies its CI, deployment and hosted tests. Step 8 subsequently deployed
+`b277d3e114d995613841f490f4dda971ed7762d9`, including the measured contrast fixes;
+its [exact-source acceptance record](deployed-e2e-testing.md#passing-exact-source-retest)
+identifies the current artifact. Documentation-only commits do not replace that
+deployed artifact. Production remains disabled and external SMTP acceptance
+remains deferred.
 
 The only deployment target in this procedure is **uc-online-shop-staging**:
 <https://uc-online-shop-staging.vercel.app>. Its database is

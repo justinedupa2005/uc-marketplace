@@ -1,0 +1,108 @@
+name: Staging backups and isolated restoration
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Staging operation (restoration uses synthetic local fixtures only)
+        type: choice
+        options: [plan, capture, check, storage-drill, restore-drill]
+        default: plan
+        required: true
+  schedule:
+    - cron: "17 18 * * *" # 02:17 Asia/Manila; explicit owner activation required
+    - cron: "47 18 * * 0" # Weekly full integrity read, not a restore claim
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: uc-marketplace-staging-backups
+  cancel-in-progress: false
+
+jobs:
+  plan-or-drill:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging' && (inputs.operation == 'plan' || inputs.operation == 'storage-drill' || inputs.operation == 'restore-drill')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: staging
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "22"
+          cache: npm
+      - run: node scripts/operations/verify-source.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - run: npm ci
+      - run: npm run ops:plan
+      - if: inputs.operation != 'plan'
+        run: npm run ops:install-restic
+      - if: inputs.operation == 'storage-drill'
+        run: npm run ops:drill:storage
+        env:
+          OPS_RESTIC_BINARY: ${{ github.workspace }}/.qa/tools/restic-0.19.1/restic
+      - if: inputs.operation == 'restore-drill'
+        run: |
+          npx playwright install --with-deps chromium
+          npm run ops:drill
+        env:
+          OPS_RESTIC_BINARY: ${{ github.workspace }}/.qa/tools/restic-0.19.1/restic
+      # No hosted credentials or artifact uploads in synthetic drill jobs.
+
+  encrypted-backup:
+    if: vars.STAGING_BACKUPS_ENABLED == 'true' && (github.event_name == 'schedule' || (github.ref == 'refs/heads/staging' && (inputs.operation == 'capture' || inputs.operation == 'check')))
+    environment: staging-operations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: staging
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "22"
+          cache: npm
+      - run: node scripts/operations/verify-source.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - run: npm ci
+      - run: npm run ops:install-restic
+      - name: Recheck exact source immediately before accessing backup credentials
+        run: node scripts/operations/verify-source.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Capture encrypted staging bundle
+        if: inputs.operation == 'capture' || github.event.schedule == '17 18 * * *'
+        run: npm run ops:backup
+        env:
+          OPS_ENV: staging
+          OPS_PROJECT_REF: niocptgzzbozpbfzifdk
+          OPS_CONFIRM: niocptgzzbozpbfzifdk:backup
+          OPS_DATABASE_URL: ${{ secrets.OPS_DATABASE_URL }}
+          OPS_SERVICE_ROLE_KEY: ${{ secrets.OPS_SERVICE_ROLE_KEY }}
+          OPS_RESTIC_BINARY: ${{ github.workspace }}/.qa/tools/restic-0.19.1/restic
+          RESTIC_REPOSITORY: ${{ vars.STAGING_BACKUP_REPOSITORY }}
+          RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.BACKUP_REGION }}
+      - name: Read and verify every encrypted repository block
+        if: inputs.operation == 'check' || github.event.schedule == '47 18 * * 0'
+        run: npm run ops:check
+        env:
+          OPS_ENV: staging
+          OPS_PROJECT_REF: niocptgzzbozpbfzifdk
+          OPS_RESTIC_BINARY: ${{ github.workspace }}/.qa/tools/restic-0.19.1/restic
+          RESTIC_REPOSITORY: ${{ vars.STAGING_BACKUP_REPOSITORY }}
+          RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.BACKUP_REGION }}
+      # Intentionally no production, restore-to-hosted, automatic prune,
+      # environment dumps, SQL export files, or credential-bearing artifacts.
