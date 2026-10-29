@@ -241,10 +241,34 @@ owned disposable container was removed; existing development stacks were not
 reset. Sanitized evidence is under ignored `.qa/operations/drills/`.
 
 Read-only hosted monitoring worked and correctly reported the missing approved
-backup as `BACKUP_NOT_VERIFIED_FRESH`. The B2 off-site drill is prepared, **not
-yet run**; secret-name presence is not proof of valid credentials or a backup.
+backup as `BACKUP_NOT_VERIFIED_FRESH`. The first B2 off-site drill
+([run 40868993896](https://github.com/justinedupa2005/uc-marketplace/actions/runs/40868993896))
+passed CI, exact-source gates and installation, received the required staging
+review, then **failed inside the drill**. No passing off-site receipt exists.
+The initial generic failure withheld the cause as well as private values; safe
+phase/category diagnostics now address that troubleshooting gap. They emit only
+fixed enums, never raw assertions, provider responses, stderr, bucket names or
+credentials. Permission, privacy and exact-source gates remain unchanged.
 Local verification passed **483** regression tests, TypeScript, ESLint and the
 production build. No real student data was used in backup/restore tests.
+
+For a failed B2 run, inspect `failurePhase`, `failureCode` and `operationCodes`:
+
+| Fixed diagnostic | Operator review (do not broaden permissions or change privacy automatically) |
+| --- | --- |
+| `B2_AUTHENTICATION_FAILED` | Check that the active application key and key ID belong together |
+| `B2_METADATA_PERMISSION_DENIED` | Confirm the key can read metadata for the selected bucket |
+| `B2_REQUEST_FORBIDDEN` | Review provider access restrictions and account/transaction caps |
+| `B2_SINGLE_BUCKET_KEY_REQUIRED` / `B2_ADMINISTRATIVE_KEY_REFUSED` | Use a non-administrative, single-bucket key; do not weaken the guard |
+| `B2_RESTIC_CAPABILITIES_REQUIRED` | Review the five documented restic capabilities, including lock cleanup |
+| `B2_PRIVATE_BUCKET_REQUIRED` | Select the intended private bucket; never make sensitive copies public |
+| `B2_ENDPOINT_ACCOUNT_MISMATCH` / bucket mismatch codes | Reconcile the configured endpoint/bucket with this key's account |
+| `S3_ACCESS_DENIED` / `S3_SIGNATURE_REJECTED` | Review S3 access and key pairing; keep raw diagnostics private |
+| `B2_OPERATION_FAILED` | Use the fixed phase to narrow investigation; never turn on raw error dumps |
+
+Each retry needs review of the failed phase first and the required staging
+environment approval. A failed drill is not a valid backup; retained partial
+synthetic artifacts, if any, are not an operational repository to adopt.
 
 Before Step 9 is complete: verify B2 credentials/destination, approve key custody
 and retention, obtain separate authority before any non-synthetic capture,
