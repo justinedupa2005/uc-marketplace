@@ -1,0 +1,6 @@
+{
+  "resticVersion": "0.19.1",
+  "resticLinuxAmd64Sha256": "f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c",
+  "resticWindowsAmd64Sha256": "da948ad707ed690426473aaba2046cd61f8f90f6f0e7dab6be0d5796531de67d",
+  "postgresImage": "postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5"
+}

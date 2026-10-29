@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "staging": {
+    "enabled": false,
+    "provider": "backblaze-b2",
+    "repository": null,
+    "repositoryId": null,
+    "owner": null,
+    "retentionApproved": false,
+    "retentionDays": 7,
+    "verificationRetentionDays": 7,
+    "backupIntervalHours": 24,
+    "backupStaleHours": 26,
+    "recoveryTimeObjectiveMinutes": 120,
+    "restoreDrillIntervalDays": 30,
+    "maxObjects": 100000,
+    "maxStorageBytes": 10737418240,
+    "databaseBudgetBytes": 500000000,
+    "storageBudgetBytes": 1000000000,
+    "monitoringEnabled": false,
+    "alertEmail": "ucmarketplace.security@gmail.com",
+    "alertWebhookOrigin": null
+  },
+  "production": { "enabled": false, "monitoringEnabled": false }
+}

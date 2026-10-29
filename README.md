@@ -57,6 +57,16 @@ Real inbox, physical-device and screen-reader acceptance remain separate gates;
 incomplete accessibility findings and small touch targets also need manual review.
 An automated pass does not enable production or complete those manual checks.
 
+Step 9 adds [encrypted database and separate file backups](docs/backup-and-recovery.md),
+isolated restoration drills, and [monitoring/incident runbooks](docs/monitoring-and-incidents.md).
+Backblaze B2 is the selected destination; incident alerts are intended for
+`ucmarketplace.security@gmail.com`. Schedules and notifications remain disabled
+pending verified destination, retention, key custody and delivery setup. Native
+synthetic restoration passed **129** security assertions and recovered **6**
+files; read-only staging monitoring also worked. The synthetic-only B2 drill is
+prepared but not yet run. These do not constitute operational backup or
+production-release sign-off.
+
 The app uses the existing `NEXT_PUBLIC_APP_URL` and
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` names; do not add URL/key aliases.
 Database setup, migration, and security-check instructions live in

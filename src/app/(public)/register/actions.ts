@@ -6,6 +6,7 @@ import { getAppUrl } from "@/lib/auth/app-url";
 import { usesCodeConfirmation } from "@/lib/auth/confirmation-mode";
 import { registrationSchema } from "@/lib/auth/validation";
 import { createClient } from "@/lib/supabase/server";
+import { reportOperationalEvent } from "@/lib/observability/events";
 
 export type RegistrationState = {
   message: string | null;
@@ -92,7 +93,8 @@ export async function register(
 
     if (error) {
       // Log only diagnostic metadata. Never log email addresses or passwords.
-      console.error("Supabase registration failed", {
+      reportOperationalEvent("email_request_failed", {
+        operation: "register",
         code: error.code,
         status: error.status,
       });
@@ -110,6 +112,7 @@ export async function register(
       };
     }
   } catch {
+    reportOperationalEvent("email_request_failed", { operation: "register" });
     return {
       message: "Unable to reach the registration service. Please try again.",
     };

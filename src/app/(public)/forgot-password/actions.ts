@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { getAppUrl } from "@/lib/auth/app-url";
 import { createClient } from "@/lib/supabase/server";
+import { reportOperationalEvent } from "@/lib/observability/events";
 
 const forgotPasswordSchema = z.object({
   email: z
@@ -49,17 +50,14 @@ export async function requestPasswordReset(
     );
 
     if (error) {
-      console.error("Supabase password reset request failed", {
-        code: typeof error.code === "string" && /^[a-z_]{1,40}$/.test(error.code) ? error.code : "service_error",
-        status: typeof error.status === "number" && Number.isInteger(error.status)
-          && error.status >= 0 && error.status <= 599 ? error.status : 0,
-      });
+      reportOperationalEvent("email_request_failed", { operation: "recover", code: error.code, status: error.status });
 
       // Keep the response indistinguishable for registered and unregistered
       // addresses. Operational details remain server-side only.
       return { status: "success", message: GENERIC_SUCCESS_MESSAGE };
     }
   } catch {
+    reportOperationalEvent("email_request_failed", { operation: "recover" });
     // Provider throttles/outages can depend on whether an account exists.
     // Valid email inputs always receive the same public response; never retry.
     return { status: "success", message: GENERIC_SUCCESS_MESSAGE };
