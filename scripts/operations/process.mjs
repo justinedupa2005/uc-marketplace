@@ -2,16 +2,17 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { resticFailureCodes } from "./diagnostics.mjs";
 
 // No shell expansion, token arguments, raw diagnostics, inherited output, or
 // repository passwords in child command lines. CLI output is private by default.
-export async function command(executable, args, { env = process.env, input, output, timeoutMs = 900000, maxBytes = 4000000, postgresRestoreDiagnostics = false } = {}) {
+export async function command(executable, args, { env = process.env, input, output, timeoutMs = 900000, maxBytes = 4000000, postgresRestoreDiagnostics = false, resticDiagnostics = false } = {}) {
   const child = spawn(executable, args, { env, windowsHide: true, shell: false, stdio: ["pipe", "pipe", "pipe"] });
   const timer = setTimeout(() => child.kill(), timeoutMs);
   let bytes = 0, tooLarge = false;
   const chunks = [];
   let diagnostic = "";
-  child.stderr.on("data", chunk => { if (postgresRestoreDiagnostics && diagnostic.length < 65536) diagnostic += chunk.toString(); });
+  child.stderr.on("data", chunk => { if ((postgresRestoreDiagnostics || resticDiagnostics) && diagnostic.length < 65536) diagnostic = (diagnostic + chunk.toString()).slice(0, 65536); });
   const completed = new Promise((resolve, reject) => {
     child.once("error", reject);
     child.once("close", code => { clearTimeout(timer); if (code === 0 && !tooLarge) resolve(); else reject(new Error("Private operation failed.")); });
@@ -44,6 +45,7 @@ export async function command(executable, args, { env = process.env, input, outp
     if (postgresRestoreDiagnostics) for (const schema of ["public", "private", "auth", "storage", "extensions", "supabase_migrations"]) {
       if (new RegExp(`schema ["']?${schema}["']? (?:already exists|does not exist)`, "i").test(diagnostic)) error.operationCodes.push(`SCHEMA_${schema.toUpperCase()}`);
     }
+    if (resticDiagnostics) error.operationCodes = [...(error.operationCodes ?? []), ...resticFailureCodes(diagnostic)];
     throw error;
   }
   finally { clearTimeout(timer); }

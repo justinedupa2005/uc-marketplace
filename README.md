@@ -63,8 +63,9 @@ Backblaze B2 is the selected destination; incident alerts are intended for
 `ucmarketplace.security@gmail.com`. Schedules and notifications remain disabled
 pending verified destination, retention, key custody and delivery setup. Native
 synthetic restoration passed **129** security assertions and recovered **6**
-files; read-only staging monitoring also worked. The synthetic-only B2 drill is
-prepared but not yet run. These do not constitute operational backup or
+files; read-only staging monitoring also worked. The first synthetic-only B2
+drill failed; an off-site passing receipt is still required. These do not
+constitute operational backup or
 production-release sign-off.
 
 The app uses the existing `NEXT_PUBLIC_APP_URL` and

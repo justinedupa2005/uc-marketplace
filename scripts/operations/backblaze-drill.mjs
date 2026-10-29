@@ -8,28 +8,38 @@ import { verifyBackblaze } from "./backblaze.mjs";
 import { resticClient } from "./restic.mjs";
 import { decodeStoragePack, writeStream } from "./storage.mjs";
 import { syntheticPng, syntheticProjectRef } from "./drill-fixtures.mjs";
+import { backblazeFailure } from "./diagnostics.mjs";
 
-export async function backblazeDrill(source = process.env) {
-  assert.equal(source.OPS_B2_SYNTHETIC_CONFIRM, "synthetic-only", "Explicit synthetic-only confirmation required.");
+export async function backblazeDrill(source = process.env, adapters = {}) {
+  let phase = "configuration";
+  try {
+  assert.equal(source.OPS_B2_SYNTHETIC_CONFIRM, "synthetic-only", "B2_CONFIRMATION_REQUIRED");
   assert.ok(!source.OPS_DATABASE_URL && !source.OPS_SERVICE_ROLE_KEY && !source.OPS_MANAGEMENT_TOKEN,
-    "Do not inject any Supabase credential into this drill.");
-  const id = randomUUID(), start = Date.now(), target = await verifyBackblaze(source, id);
+    "B2_SUPABASE_CREDENTIAL_REFUSED");
   const env = controlledEnvironment(source);
+  phase = "b2-preflight";
+  const id = randomUUID(), start = Date.now(), target = await (adapters.verify ?? verifyBackblaze)(source, id);
   for (const name of Object.keys(env)) if (name.startsWith("AWS_") || name.startsWith("OPS_") && name !== "OPS_RESTIC_BINARY") delete env[name];
   Object.assign(env, { OPS_DRILL_ID: id, RESTIC_REPOSITORY: target.repository, RESTIC_PASSWORD: randomBytes(48).toString("base64url"),
     AWS_ACCESS_KEY_ID: source.B2_KEY_ID, AWS_SECRET_ACCESS_KEY: source.B2_APPLICATION_KEY, AWS_DEFAULT_REGION: target.region });
-  const binary = env.OPS_RESTIC_BINARY || "restic", storage = resticClient(env);
+  const execute = adapters.execute ?? ((binary, args, options) => command(binary, args, { ...options, resticDiagnostics: true }));
+  const client = adapters.restic ?? (env => resticClient(env, execute));
+  const binary = env.OPS_RESTIC_BINARY || "restic", storage = client(env);
   // Restic refuses init of an existing repository; no overwrite, prune, cleanup
   // of existing prefixes, provider configuration changes or source-data reads.
-  assert.match((await command(binary, ["version"], { env })).toString(), /^restic 0\.19\.1\b/);
-  await command(binary, ["--no-cache", "init", "--repository-version", "2"], { env });
-  const config = JSON.parse((await command(binary, ["--no-cache", "cat", "config"], { env })).toString());
+  phase = "tool-verification";
+  assert.match((await execute(binary, ["version"], { env })).toString(), /^restic 0\.19\.1\b/);
+  phase = "repository-init";
+  await execute(binary, ["--no-cache", "init", "--repository-version", "2"], { env });
+  phase = "repository-verification";
+  const config = JSON.parse((await execute(binary, ["--no-cache", "cat", "config"], { env })).toString());
   await storage.verify(config.id);
   const producer = component => [process.execPath, fileURLToPath(new URL("./storage-drill-producer.mjs", import.meta.url)), component];
   const snapshots = {};
-  for (const component of ["media", "verification"]) snapshots[component] = await storage.backup(component, id, producer(component));
+  for (const component of ["media", "verification"]) { phase = `${component}-backup`; snapshots[component] = await storage.backup(component, id, producer(component)); }
   let objects = 0;
   for (const component of ["media", "verification"]) {
+    phase = `${component}-restore`;
     const input = new PassThrough();
     await Promise.all([
       decodeStoragePack(input, { projectRef: syntheticProjectRef, runId: id, component, maxObjects: 10, maxStorageBytes: 10000 }, async (_object, bytes) => {
@@ -39,8 +49,11 @@ export async function backblazeDrill(source = process.env) {
     ]);
   }
   assert.equal(objects, 3);
+  phase = "integrity-read";
   await storage.check(true);
-  await assert.rejects(resticClient({ ...env, RESTIC_PASSWORD: randomBytes(48).toString("base64url") }).verify(config.id));
+  phase = "wrong-key-denial";
+  await assert.rejects(client({ ...env, RESTIC_PASSWORD: randomBytes(48).toString("base64url") }).verify(config.id));
+  phase = "failed-producer-denial";
   const before = (await storage.snapshots()).length;
   await assert.rejects(storage.backup("database", id, producer("broken")));
   assert.equal((await storage.snapshots()).length, before);
@@ -49,9 +62,15 @@ export async function backblazeDrill(source = process.env) {
     elapsedSeconds: Math.ceil((Date.now() - start) / 1000), retainedSyntheticPrefix: target.prefix,
     ephemeralKeySaved: false, databaseRestoreTested: false, hostedStorageApiRestoreTested: false,
     realStudentDataUsed: false, productionTouched: false, alertsSent: false };
+  } catch (error) {
+    const failure = new Error("Backblaze synthetic drill failed.");
+    failure.diagnostic = backblazeFailure(error, phase);
+    throw failure; // Never forward raw provider messages, assertions or causes.
+  }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try { assert.equal(process.argv.length, 2); console.log(JSON.stringify(await backblazeDrill())); }
-  catch { console.error("Backblaze synthetic drill failed. Check private bucket, endpoint, bucket-limited key and read/list/write/delete-files permissions. Private diagnostics withheld; no student data was used."); process.exitCode = 1; }
+  catch (error) { console.error(JSON.stringify({ version: 1, source: "synthetic-only", provider: "backblaze-b2", status: "failed",
+    ...(error.diagnostic ?? backblazeFailure(error, "configuration")), realStudentDataUsed: false, productionTouched: false, alertsSent: false })); process.exitCode = 1; }
 }

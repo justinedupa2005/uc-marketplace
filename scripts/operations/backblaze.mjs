@@ -39,8 +39,12 @@ export function syntheticRepository(env, authorized, bucket, id) {
     prefix: `${prefix}ucm-synthetic-tests/${id}`, region: new URL(endpoint).hostname.split(".")[1] };
 }
 
-async function privateJson(fetcher, url, init) {
+async function privateJson(fetcher, url, init, authentication = false) {
   const response = await fetcher(url, { ...init, redirect: "error", signal: AbortSignal.timeout(30_000) });
+  if (response.status === 401) throw new Error(authentication ? "B2_AUTHENTICATION_FAILED" : "B2_METADATA_PERMISSION_DENIED");
+  if (response.status === 403) throw new Error("B2_REQUEST_FORBIDDEN");
+  if (response.status === 429) throw new Error("B2_REQUEST_THROTTLED");
+  if (response.status >= 500) throw new Error("B2_SERVICE_UNAVAILABLE");
   assert.equal(response.status, 200, "B2_METADATA_REQUEST_FAILED");
   let size = 0; const chunks = [];
   for await (const chunk of response.body) {
@@ -55,7 +59,7 @@ export async function verifyBackblaze(env, id, fetcher = fetch) {
   assert.ok(typeof env.B2_APPLICATION_KEY === "string" && /^[a-zA-Z0-9+/=_-]{20,200}$/.test(env.B2_APPLICATION_KEY), "B2_APPLICATION_KEY_REQUIRED");
   const authorized = await privateJson(fetcher, "https://api.backblazeb2.com/b2api/v4/b2_authorize_account", {
     headers: { Authorization: `Basic ${Buffer.from(`${env.B2_KEY_ID}:${env.B2_APPLICATION_KEY}`).toString("base64")}` },
-  });
+  }, true);
   const api = new URL(authorized.apiInfo?.storageApi?.apiUrl);
   assert.ok(api.protocol === "https:" && /^api\d+\.backblazeb2\.com$/.test(api.hostname) && api.pathname === "/" &&
     !api.username && !api.password && !api.port && !api.search && !api.hash, "B2_NATIVE_ENDPOINT_INVALID");
