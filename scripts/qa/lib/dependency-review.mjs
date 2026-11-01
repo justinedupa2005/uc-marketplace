@@ -4,7 +4,7 @@ const severities = ["info", "low", "moderate", "high", "critical"];
 const minimatchPackages = ["@eslint-community/eslint-utils", "@eslint/config-array", "@eslint/eslintrc", "@next/eslint-plugin-next",
   "@typescript-eslint/eslint-plugin", "@typescript-eslint/parser", "@typescript-eslint/type-utils", "@typescript-eslint/typescript-estree",
   "@typescript-eslint/utils", "eslint", "eslint-config-next", "eslint-plugin-import", "eslint-plugin-jsx-a11y", "eslint-plugin-react", "minimatch", "typescript-eslint"];
-const reviewCodes = new Set(["AUDIT_EVIDENCE_INVALID", "PRODUCTION_FINDINGS", "MINIMATCH_APPROVAL_INVALID_OR_EXPIRED", "MINIMATCH_FINDINGS_CHANGED", "MINIMATCH_NODES_OR_SEVERITY_CHANGED", "MINIMATCH_INSTALL_CHANGED", "MINIMATCH_ADVISORY_CHANGED", "MINIMATCH_EDGES_CHANGED", "MINIMATCH_FIX_CHANGED"]);
+const reviewCodes = new Set(["AUDIT_EVIDENCE_INVALID", "PRODUCTION_FINDINGS", "MINIMATCH_APPROVAL_INVALID_OR_EXPIRED", "MINIMATCH_FINDINGS_CHANGED", "MINIMATCH_NODES_OR_SEVERITY_CHANGED", "MINIMATCH_INSTALL_CHANGED", "MINIMATCH_ADVISORY_CHANGED", "MINIMATCH_EDGES_CHANGED", "MINIMATCH_DIRECT_DEPENDENCY_CHANGED", "MINIMATCH_FIX_CHANGED"]);
 const failure = (code = "AUDIT_EVIDENCE_INVALID") => Object.assign(new Error("Dependency review failed: unreviewed, expired, production, or invalid audit evidence. No raw diagnostics were printed."), { reviewCode: reviewCodes.has(code) ? code : "AUDIT_EVIDENCE_INVALID" });
 
 export function dependencyFailureCode(error) { return reviewCodes.has(error?.reviewCode) ? error.reviewCode : "AUDIT_COMMAND_OR_NETWORK_FAILED"; }
@@ -110,13 +110,15 @@ function reviewMinimatch(full, lock, policy, now) {
       "eslint-downgrade": { name: "eslint", version: "4.0.0", isSemVerMajor: true },
       "next-config-downgrade": { name: "eslint-config-next", version: "0.2.4", isSemVerMajor: true },
     };
-    // Arborist propagates top-level fixes through the advisory graph. Four
-    // indirect findings alternate between its default true and the rejected
-    // Next config downgrade depending on graph traversal. Bind these reviewed
-    // metadata variants, not arbitrary fixes/downgrades or changed libraries.
-    const proposals = Array.isArray(approved.fix) ? approved.fix : [approved.fix];
-    if (!proposals.length || proposals.length > 2 || proposals.some(item => item !== true && !Object.hasOwn(fixes, item))
-      || !proposals.some(item => isDeepStrictEqual(value.fixAvailable, item === true ? true : fixes[item]))) throw Object.assign(failure("MINIMATCH_FIX_CHANGED"), {
+    // Arborist propagates fixAvailable through transitive via/effects cycles;
+    // traversal/cache order changes those suggestions without changing risk.
+    // Bind the two actual project-level fixes, not unstable indirect display
+    // metadata. All 16 packages' paths, versions, edges and advisory stay bound.
+    const direct = name === "eslint" || name === "eslint-config-next";
+    if (value.isDirect !== direct) throw failure("MINIMATCH_DIRECT_DEPENDENCY_CHANGED");
+    if (!direct) continue;
+    const fix = fixes[approved.fix];
+    if (!fix || !isDeepStrictEqual(value.fixAvailable, fix)) throw Object.assign(failure("MINIMATCH_FIX_CHANGED"), {
         reviewPackage: name, reviewFix: value.fixAvailable, reviewFixClass: value.fixAvailable === true ? "IN_RANGE_UPDATE" : isDeepStrictEqual(value.fixAvailable, fixes["eslint-downgrade"])
           ? "ESLINT_DOWNGRADE" : isDeepStrictEqual(value.fixAvailable, fixes["next-config-downgrade"]) ? "NEXT_CONFIG_DOWNGRADE" : "UNREVIEWED_FIX" });
   }

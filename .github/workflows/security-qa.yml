@@ -87,8 +87,19 @@ jobs:
     uses: ./.github/workflows/backups-and-restore.yml
     with:
       operation: ${{ inputs.staging_operation }}
-    # No secrets: inherit. The called jobs explicitly name staging-operations,
-    # so only that protected environment releases its credentials after review.
+    secrets:
+      OPS_DATABASE_URL: ${{ secrets.OPS_DATABASE_URL }}
+      OPS_SERVICE_ROLE_KEY: ${{ secrets.OPS_SERVICE_ROLE_KEY }}
+      RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
+      BACKUP_ACCESS_KEY_ID: ${{ secrets.BACKUP_ACCESS_KEY_ID }}
+      BACKUP_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_SECRET_ACCESS_KEY }}
+      OPS_MANAGEMENT_TOKEN: ${{ secrets.OPS_MANAGEMENT_TOKEN }}
+      OPS_VERCEL_TOKEN: ${{ secrets.OPS_VERCEL_TOKEN }}
+      OPS_ALERT_WEBHOOK_URL: ${{ secrets.OPS_ALERT_WEBHOOK_URL }}
+      OPS_BREVO_API_KEY: ${{ secrets.OPS_BREVO_API_KEY }}
+    # Named mappings are required even for environment-only secrets. The called
+    # jobs bind staging-operations and resolve its values only after review.
+    # Never inherit unrelated repository/organization/production secrets.
 
   isolated-full-stack:
     if: github.event_name == 'workflow_dispatch' && inputs.full_stack

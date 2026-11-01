@@ -8,6 +8,16 @@ export const components = Object.freeze(["database", "media", "verification", "b
 export const snapshotId = /^[a-f0-9]{64}$/;
 export const runId = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 
+export const backupBindings = Object.freeze(["OPS_ENV", "OPS_PROJECT_REF", "OPS_DATA_SCOPE", "OPS_DATABASE_URL", "OPS_SERVICE_ROLE_KEY",
+  "RESTIC_REPOSITORY", "RESTIC_PASSWORD", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_DEFAULT_REGION"]);
+
+export function requireBackupBindings(env) {
+  const missing = backupBindings.filter(name => typeof env[name] !== "string" || env[name].trim().length === 0);
+  if (missing.length) throw Object.assign(new Error("Required backup inputs were not delivered; values withheld."), {
+    operationPhase: "preflight-bindings", operationCodes: missing.map(name => `${name}_REQUIRED`),
+  });
+}
+
 export function validateTarget(env) {
   assert.equal(env.OPS_ENV, "staging", "Operations currently support staging only; production is blocked.");
   assert.equal(env.OPS_PROJECT_REF, registry.staging.supabaseProjectRef, "Explicit staging identity required.");
@@ -38,9 +48,11 @@ export function validateBackupPolicy(env, selected = policy.staging) {
   assert.equal(selected.verificationRetentionDays, selected.retentionDays, "Use the strictest retention for all bundle components.");
   assert.ok(typeof selected.repository === "string" && /^s3:https:\/\/[a-z0-9.-]+(?::443)?\/[a-zA-Z0-9/_-]+$/.test(selected.repository),
     "Configure an exact HTTPS S3-compatible off-site repository without embedded credentials.");
-  assert.equal(env.RESTIC_REPOSITORY, selected.repository, "Backup repository must match the approved destination.");
+  assert.ok(env.RESTIC_REPOSITORY === selected.repository, Object.assign(new Error("Backup repository must match the approved destination."),
+    { operationCodes: ["RESTIC_REPOSITORY_MISMATCH"] }));
   assert.ok(typeof env.RESTIC_PASSWORD === "string" && env.RESTIC_PASSWORD.length >= 32
-    && !/example|placeholder|changeme/i.test(env.RESTIC_PASSWORD), "A persistent strong repository password is required.");
+    && !/example|placeholder|changeme/i.test(env.RESTIC_PASSWORD), Object.assign(new Error("A persistent strong repository password is required."),
+    { operationCodes: ["RESTIC_PASSWORD_POLICY_REJECTED"] }));
   assert.match(selected.repositoryId ?? "", snapshotId, "Pin the independently initialized restic repository ID.");
   assert.ok(Number.isSafeInteger(selected.maxObjects) && selected.maxObjects > 0 && selected.maxObjects <= 100000);
   assert.ok(Number.isSafeInteger(selected.maxStorageBytes) && selected.maxStorageBytes > 0 && selected.maxStorageBytes <= 107374182400);

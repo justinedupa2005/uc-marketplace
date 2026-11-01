@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFile } from "node:fs/promises";
-import { policy, registry } from "../scripts/operations/policy.mjs";
+import { policy, registry, backupBindings, requireBackupBindings } from "../scripts/operations/policy.mjs";
 import { validateBundle, validateRestoreEvidence, readJsonSnapshot } from "../scripts/operations/bundle.mjs";
-import { verifyScheduledReadiness } from "../scripts/operations/cycle.mjs";
+import { verifyScheduledReadiness, cycle } from "../scripts/operations/cycle.mjs";
 import { testAlert } from "../scripts/operations/alert-test.mjs";
 import { sendBrevoAlert } from "../scripts/operations/brevo.mjs";
 import { databaseFailureCode } from "../scripts/operations/diagnostics.mjs";
@@ -20,6 +20,35 @@ const proof = () => ({ version: 1, status: "passed", environment: "staging", dat
   cleanup: true, catalogAssertions: 129, restoredAccessChecks: 3, objectsRestored: 15, completedAt: new Date().toISOString(), productionTouched: false });
 const env = { OPS_ENV: "staging", OPS_PROJECT_REF: registry.staging.supabaseProjectRef, OPS_DATA_SCOPE: "synthetic-only",
   RESTIC_REPOSITORY: policy.staging.repository, RESTIC_PASSWORD: "Synthetic-test-only-repository-password-0123456789", OPS_SCHEDULED_CONFIRM: "staging-synthetic-only" };
+
+test("missing reusable-workflow credentials fail before network or capture and expose only fixed input names", async () => {
+  const configured = Object.fromEntries(backupBindings.map(name => [name, `synthetic-test-only-${name}`]));
+  const original = { ...configured };
+  assert.doesNotThrow(() => requireBackupBindings(configured)); assert.deepEqual(configured, original);
+  const missing = ["OPS_DATABASE_URL", "OPS_SERVICE_ROLE_KEY", "RESTIC_PASSWORD", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"];
+  const delivered = { ...env, ...Object.fromEntries(missing.map(name => [name, ""])), AWS_DEFAULT_REGION: "us-west-004" };
+  await assert.rejects(cycle(delivered), error => {
+    assert.equal(error.operationPhase, "preflight-bindings");
+    assert.deepEqual(error.operationCodes, missing.map(name => `${name}_REQUIRED`));
+    assert.ok(!JSON.stringify(error).includes(env.RESTIC_PASSWORD)); return true;
+  });
+  for (const value of [undefined, "", " \r\n ", 1]) {
+    assert.throws(() => requireBackupBindings({ ...configured, RESTIC_PASSWORD: value }), error => {
+      assert.deepEqual(error.operationCodes, ["RESTIC_PASSWORD_REQUIRED"]); return true;
+    });
+  }
+});
+
+test("invalid repository/password policy failures stay inside the cycle's classified preflight without private assertion diffs", async () => {
+  const delivered = { ...Object.fromEntries(backupBindings.map(name => [name, `synthetic-test-only-${name}`])), ...env };
+  for (const [values, code] of [[{ RESTIC_PASSWORD: "short-test-value" }, "RESTIC_PASSWORD_POLICY_REJECTED"],
+    [{ RESTIC_REPOSITORY: "s3:https://wrong.example.test/wrong" }, "RESTIC_REPOSITORY_MISMATCH"]]) {
+    await assert.rejects(cycle({ ...delivered, ...values }), error => {
+      assert.equal(error.operationPhase, "preflight-policy"); assert.deepEqual(error.operationCodes, [code]);
+      assert.ok(!JSON.stringify(error).includes(Object.values(values)[0])); return true;
+    });
+  }
+});
 
 test("database preflight diagnostics distinguish refused authentication without exposing provider details", () => {
   assert.equal(databaseFailureCode({ code: "28P01", message: "private provider detail" }), "DATABASE_AUTHENTICATION_REJECTED");
@@ -149,7 +178,7 @@ test("manual vault operations are independent of daily scheduling and retain sta
   assert.match(restore, /networkInfo\[0\]\.Labels\["ucmarketplace.restore-drill"\]/);
 });
 
-test("the registered QA workflow calls same-commit operations only after CI without inheriting repository secrets", async () => {
+test("the registered QA workflow explicitly passes only declared operation secret names after CI, without broad inheritance", async () => {
   const workflow = await readFile(new URL("../.github/workflows/security-qa.yml", import.meta.url), "utf8");
   const job = workflow.slice(workflow.indexOf("\n  staging-operations:"), workflow.indexOf("\n  isolated-full-stack:"));
   assert.match(job, /github\.event_name == 'workflow_dispatch'/);
@@ -157,12 +186,21 @@ test("the registered QA workflow calls same-commit operations only after CI with
   assert.match(job, /needs: local-security/);
   assert.match(job, /uses: \.\/\.github\/workflows\/backups-and-restore\.yml/);
   assert.match(job, /operation: \$\{\{ inputs\.staging_operation \}\}/);
-  assert.ok(!/^\s*secrets:/m.test(job));
+  assert.ok(!/^\s*secrets:\s*inherit\s*$/m.test(job));
+  const required = ["OPS_DATABASE_URL", "OPS_SERVICE_ROLE_KEY", "RESTIC_PASSWORD", "BACKUP_ACCESS_KEY_ID", "BACKUP_SECRET_ACCESS_KEY"];
+  const optional = ["OPS_MANAGEMENT_TOKEN", "OPS_VERCEL_TOKEN", "OPS_ALERT_WEBHOOK_URL", "OPS_BREVO_API_KEY"];
+  const bindings = [...job.matchAll(/^\s+([A-Z_]+): \$\{\{ secrets\.([A-Z_]+) \}\}$/gm)];
+  assert.deepEqual(bindings.map(([, name]) => name), [...required, ...optional]);
+  assert.ok(bindings.every(([, name, source]) => name === source));
   assert.match(job, /actions: read/);
   assert.match(workflow, /cancel-in-progress: \$\{\{.*inputs\.staging_operation == 'none'/);
   assert.match(workflow, /group: security-qa-.*'operations' \|\| 'quality'/);
   const called = await readFile(new URL("../.github/workflows/backups-and-restore.yml", import.meta.url), "utf8");
   assert.match(called, /workflow_call:\s+inputs:\s+operation:/);
+  const contract = called.slice(called.indexOf("  workflow_call:"), called.indexOf("  workflow_dispatch:"));
+  for (const name of required) assert.match(contract, new RegExp(`${name}:\\s+required: true`));
+  for (const name of optional) assert.match(contract, new RegExp(`${name}:\\s+required: false`));
+  assert.equal((called.match(/environment: staging-operations/g) ?? []).length, 3);
 });
 
 test("the explicit Brevo delivery job never releases database, vault or hosting credentials", async () => {

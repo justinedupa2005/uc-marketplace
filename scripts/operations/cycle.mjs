@@ -4,7 +4,7 @@ import path from "node:path";
 import { command } from "./process.mjs";
 import { capture } from "./backup.mjs";
 import { verifyOperations } from "./verify.mjs";
-import { policy, validateBackupPolicy } from "./policy.mjs";
+import { policy, validateBackupPolicy, requireBackupBindings } from "./policy.mjs";
 import { resticClient } from "./restic.mjs";
 import { readJsonSnapshot, validateRestoreEvidence } from "./bundle.mjs";
 import { restoreBundle } from "./restore.mjs";
@@ -26,9 +26,14 @@ export async function verifyScheduledReadiness(env, sha, storage = resticClient(
 }
 
 export async function cycle(env) {
-  const selected = validateBackupPolicy(env), sha = await reviewedSource();
-  let phase = "preflight";
+  let phase = "preflight-bindings";
   try {
+    requireBackupBindings(env);
+    phase = "preflight-policy";
+    const selected = validateBackupPolicy(env);
+    phase = "preflight-source";
+    const sha = await reviewedSource();
+    phase = "preflight";
     const configured = await verifyOperations(env);
     if (env.OPS_SCHEDULED_CONFIRM) await verifyScheduledReadiness(configured, sha);
     phase = "capture";
@@ -50,6 +55,6 @@ export async function cycle(env) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try { assert.equal(process.argv.length, 2); assert.equal(policy.production.enabled, false); console.log(JSON.stringify(await cycle(process.env))); }
   catch (error) { console.error(JSON.stringify({ status: "failed", environment: "staging", operation: "capture-and-isolated-restore", privateDetailsWithheld: true,
-    failurePhase: ["preflight", "preflight-policy", "preflight-b2", "preflight-vault", "preflight-database", "preflight-storage", "capture", "restore", "restore-container", "restore-archive", "restore-fingerprints", "restore-security", "restore-files", "restore-image", "restore-evidence"].includes(error?.operationPhase) ? error.operationPhase : "preflight",
+    failurePhase: ["preflight", "preflight-bindings", "preflight-policy", "preflight-source", "preflight-b2", "preflight-vault", "preflight-database", "preflight-storage", "capture", "restore", "restore-container", "restore-archive", "restore-fingerprints", "restore-security", "restore-files", "restore-image", "restore-evidence"].includes(error?.operationPhase) ? error.operationPhase : "preflight",
     operationCodes: Array.isArray(error?.operationCodes) ? error.operationCodes : [], productionTouched: false })); process.exitCode = 1; }
 }

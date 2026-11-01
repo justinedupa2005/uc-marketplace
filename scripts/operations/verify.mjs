@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { validateBackupPolicy, assertSyntheticSource, registry } from "./policy.mjs";
+import { validateBackupPolicy, assertSyntheticSource, registry, requireBackupBindings } from "./policy.mjs";
 import { validateServiceKey, prepareCa } from "./backup.mjs";
 import { connect } from "./database.mjs";
 import { backblazeConfiguration, verifyBackblaze } from "./backblaze.mjs";
@@ -11,8 +11,10 @@ import { validateBuckets } from "./storage.mjs";
 import { backblazeFailure, databaseFailureCode } from "./diagnostics.mjs";
 
 export async function verifyOperations(env) {
-  let phase = "preflight-policy";
+  let phase = "preflight-bindings";
   try {
+  requireBackupBindings(env);
+  phase = "preflight-policy";
   const selected = validateBackupPolicy(env); validateServiceKey(env);
   assert.equal(selected.dataScope, "synthetic-only");
   const url = new URL(selected.repository.slice(3));
