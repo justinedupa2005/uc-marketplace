@@ -82,8 +82,8 @@ function minimatchFixture() {
   const entries = {}, lock = { packages: {} };
   for (const [name, value] of Object.entries(minimatchPolicy.packages)) {
     for (const [node, version] of Object.entries(value.nodes)) lock.packages[node] = { version, dev: true };
-    const fix = Array.isArray(value.fix) ? value.fix[0] : value.fix;
-    entries[name] = { name, severity: "moderate", nodes: Object.keys(value.nodes),
+    const fix = value.fix;
+    entries[name] = { name, severity: "moderate", nodes: Object.keys(value.nodes), isDirect: name === "eslint" || name === "eslint-config-next",
       via: name === "minimatch" ? [{ name, url: minimatchPolicy.advisory, severity: "moderate", range: "<11.0.1" }] : [...value.via],
       fixAvailable: fix === true ? true : fix === "eslint-downgrade" ? { name: "eslint", version: "4.0.0", isSemVerMajor: true }
         : { name: "eslint-config-next", version: "0.2.4", isSemVerMajor: true } };
@@ -114,9 +114,11 @@ test("the seven-day exception cannot authorize production risk, new advisories, 
     f => { f.lock.packages["node_modules/minimatch"].dev = false; },
     f => { f.lock.packages["node_modules/minimatch"].version = "3.1.6"; },
     f => { f.full.vulnerabilities.eslint.via.push("minimatch"); },
-    f => { f.full.vulnerabilities.minimatch.fixAvailable = { name: "minimatch", version: "11.0.3", isSemVerMajor: false }; },
-    f => { f.full.vulnerabilities.minimatch.fixAvailable = true; },
-    f => { f.full.vulnerabilities["eslint-plugin-import"].fixAvailable = false; },
+    f => { f.full.vulnerabilities.eslint.fixAvailable = { name: "eslint", version: "9.39.6", isSemVerMajor: false }; },
+    f => { f.full.vulnerabilities.eslint.fixAvailable = true; },
+    f => { f.full.vulnerabilities["eslint-config-next"].fixAvailable = false; },
+    f => { f.full.vulnerabilities.minimatch.isDirect = true; },
+    f => { f.full.vulnerabilities.eslint.isDirect = false; },
     f => { delete f.full.vulnerabilities["eslint-plugin-react"]; f.full = report(f.full.vulnerabilities); },
     f => { f.full.vulnerabilities.extra = { name: "extra", severity: "low", via: ["minimatch"], nodes: ["node_modules/extra"] }; f.full = report(f.full.vulnerabilities); },
     f => { f.developmentPolicy.approved = false; },
@@ -136,21 +138,22 @@ test("dependency diagnostics expose only fixed review codes, never raw npm error
   assert.equal(dependencyFailureCode({ reviewCode: "untrusted secret-like input" }), "AUDIT_COMMAND_OR_NETWORK_FAILED");
   assert.deepEqual(dependencyFailureDetails({ reviewCode: "private", reviewPackage: "private", reviewFixClass: "private" }), { code: "AUDIT_COMMAND_OR_NETWORK_FAILED" });
   assert.deepEqual(dependencyFailureDetails({ reviewFix: { name: "private", version: "private", isSemVerMajor: false } }), { code: "AUDIT_COMMAND_OR_NETWORK_FAILED" });
-  const f = minimatchFixture(); f.full.vulnerabilities.minimatch.fixAvailable = true;
+  const f = minimatchFixture(); f.full.vulnerabilities.eslint.fixAvailable = true;
   try { reviewMinimatch(f); assert.fail("Must refuse changed audit evidence"); }
   catch (error) { assert.equal(dependencyFailureCode(error), "MINIMATCH_FIX_CHANGED"); }
 });
 
-test("only the reviewed default/propagated fix variants for four indirect findings are accepted", () => {
-  const indirect = ["@typescript-eslint/eslint-plugin", "@typescript-eslint/type-utils", "eslint-plugin-import", "eslint-plugin-react"];
-  assert.deepEqual(Object.entries(minimatchPolicy.packages).filter(([, value]) => Array.isArray(value.fix)).map(([name]) => name), indirect);
-  for (const name of indirect) {
-    for (const fixAvailable of [true, { name: "eslint-config-next", version: "0.2.4", isSemVerMajor: true }]) {
+test("transitive fix propagation cannot cause a false CI failure while changed project-level remedies still require review", () => {
+  assert.deepEqual(Object.entries(minimatchPolicy.packages).filter(([, value]) => value.fix !== undefined).map(([name]) => name), ["eslint", "eslint-config-next"]);
+  for (const name of Object.keys(minimatchPolicy.packages).filter(name => name !== "eslint" && name !== "eslint-config-next")) {
+    for (const fixAvailable of [true, false, { name: "eslint", version: "4.0.0", isSemVerMajor: true },
+      { name: "eslint-config-next", version: "0.2.4", isSemVerMajor: true }]) {
       const f = minimatchFixture(); f.full.vulnerabilities[name].fixAvailable = fixAvailable;
       assert.equal(reviewMinimatch(f).deferredDevelopmentPackages, 16);
     }
-    for (const fixAvailable of [false, { name, version: "9.0.0", isSemVerMajor: false },
-      { name: "eslint-config-next", version: "16.4.4", isSemVerMajor: false }]) {
+  }
+  for (const name of ["eslint", "eslint-config-next"]) {
+    for (const fixAvailable of [false, true, { name, version: "99.0.0", isSemVerMajor: false }]) {
       const f = minimatchFixture(); f.full.vulnerabilities[name].fixAvailable = fixAvailable;
       assert.throws(() => reviewMinimatch(f));
     }

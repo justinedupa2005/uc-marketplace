@@ -14,18 +14,27 @@ downgrades are not accepted fixes. No package or lockfile was changed.
 
 The owner explicitly approved a **seven-day, development-only exception** on
 November 1. `scripts/qa/dependency-policy-minimatch.json` binds the exact 16
-packages, 18 installed paths/versions, advisory edges, moderate severity and
-current npm fix proposals. Repeated runs with npm 10.9.3 and CI's 10.9.9 exposed
-order-dependent fix metadata in four indirect findings: `@typescript-eslint/eslint-plugin`,
-`@typescript-eslint/type-utils`, `eslint-plugin-import` and `eslint-plugin-react`.
-Arborist's reviewed `Vuln.fixAvailable` setter propagates top-level fixes through
-the graph: these findings can report its default `true` or the same rejected
-`eslint-config-next@0.2.4` downgrade. Only those two semantic variants are recorded
-for those four packages; no affected path/version/advisory was added. Root fixes
-and unrelated/new proposals still fail. This corrects nondeterministic resolver
-metadata, not an additional vulnerability exception.
-CI still rejects every production advisory, additional
-finding, changed dependency/path/version/fix, malformed evidence or escalation.
+packages, 18 installed paths/versions, advisory edges, moderate severity, direct
+dependency classification and the two actual project-level fix proposals.
+Repeated runs with npm 10.9.3 and CI's 10.9.9 exposed order-dependent fix metadata
+in indirect findings. PR #15 reproduced the same `@eslint-community/eslint-utils`
+finding with a Next-config downgrade suggestion instead of an ESLint downgrade;
+its library version, paths, advisory and severity had not changed.
+
+The locally reviewed npm 10.9.9 source (`@npmcli/arborist/lib/vuln.js`, setter
+`fixAvailable`) propagates top-level fixes through transitive `via`/`effects`
+cycles. Per-indirect-package suggestions are therefore unstable display metadata,
+not new vulnerability evidence. The gate now compares exact fix proposals on
+the two direct project dependencies, `eslint` and `eslint-config-next`, rather
+than enumerating every propagation variant on all 14 indirect findings. A changed
+project-level remedy still fails and requires review. Every indirect package's
+**advisory, severity, paths, installed versions and dependency edges** remains
+strictly bound. Regression tests simulate propagation changes across all 14
+indirect findings and reject changed direct remedies/classification. No new
+library instance, advisory or risk window is authorized by this correction.
+
+CI still rejects every production advisory, additional finding, changed
+dependency/path/version/direct remedy, malformed evidence or escalation.
 It reports `passed_with_reviewed_development_risk`, never a clean audit.
 Approval expires **November 8, 2026 at 00:00 Asia/Manila** (November 7, 16:00 UTC).
 The code rejects automatic renewal or extending that window. Re-review upstream
