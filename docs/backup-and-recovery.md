@@ -17,26 +17,65 @@ Database snapshots contain Storage metadata, **not the image bytes**. The
 separate file capture below is mandatory, including for private verification
 images. [Supabase restore guidance](https://supabase.com/docs/guides/platform/migrating-within-supabase/dashboard-restore).
 
-## Proposed policy: owner approval required
+## Approved synthetic manual capture; automatic activation still blocked
 
-`config/operations.json` records the selected **Backblaze B2** provider but
-intentionally starts with `enabled: false`, no owner, no exact repository
-destination/ID and `retentionApproved: false`.
+The owner approved daily backups at **02:17 Asia/Manila**, retained for **7 days**,
+for **synthetic staging data only**. `justinedupa2005` is the sole backup owner
+and incident responder; no deputy is assigned. A deputy is a continuity
+recommendation, not a technical prerequisite. Recovery depends on the sole
+maintainer's availability and independently accessible recovery material.
 
-| Control | Proposed value / activation requirement |
+`config/operations.json` records this limited approval in
+`syntheticPolicyApproval`. On 2026-11-01 the owner confirmed the hosted staging
+project contains synthetic data only and authorized one complete capture and
+isolated restoration, publishing through CI, conditional scheduling after a
+successful restore, and preparation/testing of monitoring. `manualBackupEnabled`
+and the synthetic `activationApproved`/`sourceAttestedSyntheticOnly` flags are
+true. `enabled` (scheduled policy), `monitoringEnabled` and `deletionApproved`
+remain false. No real student data, production deployment, retention deletion,
+automatic review approval or unconfigured third-party service is authorized.
+The owner-supplied permanent Backblaze S3 repository URL and full
+64-character repository ID are pinned in the policy. On 2026-10-30 the owner
+reported successful initialization, reopening with `restic snapshots`, a clean
+`restic check`, and repository format **2**, matching the format required by
+the backup client. These are owner-reported results, not an independent run of
+the application's credentialed verification. That verification must match the
+pinned ID and format 2 before capture; a changed ID or format is rejected.
+`ops:plan` now reports `repositoryConfigured: true`, meaning the URL and ID are
+recorded, not that credentials, access or bucket privacy were checked remotely.
+No database or Storage backup has been created in this permanent repository by
+this implementation.
+The owner's existing `retentionApproved: true` setting is preserved, but its
+scope is explicitly **synthetic-only** under `dataScope` and
+`syntheticPolicyApproval`: no real student records, private conversations or
+real ID images were approved for backup. Every capture checks the five known fixture
+accounts, fixture ownership markers and Storage owners inside its read-only
+snapshot; a sixth or unrecognized account/file owner aborts before any dump.
+
+The protected `staging-operations` environment now requires `justinedupa2005` to
+review jobs, permits solo-owner self-review by explicit user approval, restricts
+access to staging and disallows administrator bypass. This is a manual checkpoint,
+not independent two-person review. The existing project-verified staging
+`service_role` key was encrypted directly into its environment secret; no key
+was minted, rotated, displayed or saved locally. This preserves current JWT
+provenance validation; migration to Supabase's newer secret-key format needs a
+reviewed equivalent project-provenance check before legacy key retirement.
+
+| Control | Approved synthetic scope / remaining activation requirement |
 | --- | --- |
-| Accountable owner | Project owner appoints a named backup operator and incident deputy |
-| Frequency | Daily, 02:17 Asia/Manila; also before risky approved changes |
+| Accountable owner | `justinedupa2005`, solo maintainer; no deputy assigned |
+| Frequency | Daily, 02:17 Asia/Manila, approved as policy only; no schedule activated |
 | Recovery point objective | 24 hours; increase frequency if activity requires it |
 | Recovery time objective | 120 minutes, a target to measure, not a demonstrated SLA |
-| Retention | 7 days for the complete database/media/verification bundle; not yet approved |
+| Retention | 7 days for synthetic staging data, including generated verification fixtures; no deletion authorized |
 | Integrity | Metadata check during capture; full encrypted-data read weekly |
 | Restore exercise | Monthly and after backup/schema/tool changes |
 | Access | Dedicated private repository, MFA, narrowly scoped keys and separately authorized retention operations |
 | Key custody | Persistent strong restic password in a password manager; separate encrypted/offline recovery copy |
 
-Verification retention is a privacy decision, not a convenient default. Approve
-both the source-document lifecycle and the permitted backup-retention extension.
+Real verification retention remains a separate privacy decision. Approve both
+the source-document lifecycle and the permitted backup-retention extension
+before any real-data capture; neither is covered by the synthetic approval.
 The backup tool does not delete source student IDs or silently invent their
 legal retention period. It refuses capture until retention is approved. All
 bundle components use the strictest retention; longer database retention would
@@ -111,8 +150,11 @@ project recovery may require the provider's encryption-key transfer procedure.
 
 ## Operator activation checklist
 
-1. Appoint owner/deputy; approve retention, destination, access, key custody and
-   recovery objectives. Initialize a **new private restic v2 repository** using
+1. Keep the recorded sole owner and no-deputy continuity risk visible. Obtain
+   separate activation authority, approve the permanent destination, access,
+   key custody and recovery objectives, and confirm the exact data scope before
+   any capture. Real data needs its own retention approval. Initialize a
+   **new private restic v2 repository** using
    restic's official instructions, outside application processes. Save its
    persistent password securely and independently record its repository ID.
 2. Set the exact approved `repository` (`s3:https://host/bucket/prefix`),
@@ -129,19 +171,44 @@ project recovery may require the provider's encryption-key transfer procedure.
    Connections use the pinned provider CA and verify-full TLS. The legacy
    service key must independently identify staging and the `service_role` role.
    It is required only for private object reads, never exposed to the app.
-5. Review `npm.cmd run ops:plan`. With explicit
-   `OPS_CONFIRM=niocptgzzbozpbfzifdk:backup`, capture a complete bundle. Review
-   its receipt privately, run `npm.cmd run ops:check`, and test that exact
-   backup's recovery in an approved isolated target before operational sign-off.
+5. Review `npm.cmd run ops:plan` and run `npm.cmd run ops:verify`. The latter
+   checks the private B2 bucket, key prefix/region, pinned repository identity,
+   source fixture ownership and staging Storage credential without creating a
+   backup. For the complete test run `npm.cmd run ops:cycle` with
+   `OPS_DATA_SCOPE=synthetic-only`, `OPS_CONFIRM=niocptgzzbozpbfzifdk:backup` and
+   `OPS_RESTORE_CONFIRM=niocptgzzbozpbfzifdk:isolated-synthetic-restore` plus the
+   operator credentials. It captures the database, separate media/verification
+   bytes and completion manifest, then restores **that exact bundle ID** into a
+   fresh labelled local-only PostgreSQL container. It compares every table's
+   fingerprint and Storage inventory, runs catalog/RLS checks, verifies owner
+   access and cross-owner denial, restores the original file bytes in bounded
+   isolated memory, and decodes an actual restored listing image in Chromium.
+   The encrypted `restore-evidence` snapshot is written only after success and
+   scoped container cleanup. No local plaintext dump/image folder is created.
 6. For GitHub automation, create a separately protected **staging-operations**
    environment and the secrets/variables listed in `backups-and-restore.yml`.
    Retain restricted branch rules and GitHub workflow-failure notifications.
-   Enable `STAGING_BACKUPS_ENABLED=true` only after an approved successful manual
-   capture, read-back and recovery test. The workflow checks out staging and
+   From the registered **Security and workflow checks** workflow, select staging
+   and the `staging_operation` value `verify` or `capture-restore`. The same-commit
+   reusable operations job runs only after CI and still requires the separate
+   `staging-operations` review. It inherits no repository secrets; reviewed jobs
+   resolve only their own environment secrets. This launcher avoids changing
+   production/main just to register a new manual workflow.
+   Manual operations do not
+   depend on `STAGING_BACKUPS_ENABLED` and cannot enable scheduling. Set the
+   scheduled policy `enabled` and enable repository variable
+   `STAGING_BACKUPS_ENABLED=true` only after successful manual capture/recovery
+   on the final exact reviewed source. Scheduled capture refuses missing, stale,
+   wrong-repository or different-commit restore proof, and performs an exact
+   capture/restore cycle again. The workflow checks out staging and
    requires successful CI on that exact current staging SHA before credentials.
    Scheduled workflows run only after this workflow exists on the repository's
    default branch; do not mark scheduling operational merely because the YAML
    exists on a feature/staging branch. Do not merge to production for this reason.
+   Required environment review also applies to scheduled jobs: registering cron
+   triggers does **not** make this an unattended service. No automated approval
+   or credential handoff around that checkpoint is implemented. Any alternate
+   unattended-runner/security policy needs separate explicit review.
 7. Establish deletion using a separately authorized operator credential. Start
    with `npm.cmd run ops:retention:plan`. Applying requires the exact
    `OPS_PRUNE_CONFIRM=<staging-ref>:prune:<YYYY-MM-DD UTC>` and
@@ -178,6 +245,10 @@ This tests PostgreSQL/RLS, encrypted file bytes and browser image decoding. The
 minimal native fixture is **not** a complete GoTrue/Storage HTTP installation;
 it does not prove recovery of hosted Auth sessions, provider-encrypted fields,
 Storage API ownership or an actual hosted backup. Those remain separate gates.
+The new `ops:cycle` uses an actual hosted capture rather than generating a new
+fixture backup, but its isolated target is still a native PostgreSQL/file-byte
+recovery test, not a full hosted Supabase control-plane/API recovery. Do not claim
+restored SMTP, Auth encryption roots or a deployed replacement application.
 
 ### Synthetic-only Backblaze drill
 
@@ -241,10 +312,22 @@ owned disposable container was removed; existing development stacks were not
 reset. Sanitized evidence is under ignored `.qa/operations/drills/`.
 
 Read-only hosted monitoring worked and correctly reported the missing approved
-backup as `BACKUP_NOT_VERIFIED_FRESH`. The first B2 off-site drill
+backup as `BACKUP_NOT_VERIFIED_FRESH`. The latest synthetic-only B2 drill
+([run 40888196486](https://github.com/justinedupa2005/uc-marketplace/actions/runs/40888196486))
+passed on staging commit `0cb687a7859dfda17ab3255d618c2ebf6e686bd7`.
+Its sanitized receipt confirms **3 generated images** restored, private-bucket
+verification, full repository integrity, wrong-password denial and failed-producer
+rejection in **24 seconds**. No real student data, production changes or alert
+emails were involved. The isolated full-stack job was intentionally skipped.
+This verifies the test destination, not a permanent repository, hosted database
+backup, scheduled service or retention cleanup. Do not reuse the drill's
+ephemeral encryption password/repository for ongoing backups.
+
+Historical failures: the first B2 off-site drill
 ([run 40868993896](https://github.com/justinedupa2005/uc-marketplace/actions/runs/40868993896))
 passed CI, exact-source gates and installation, received the required staging
-review, then **failed inside the drill**. No passing off-site receipt exists.
+review, then **failed inside the drill**. At that point no passing off-site
+receipt existed.
 The initial generic failure withheld the cause as well as private values; safe
 phase/category diagnostics now address that troubleshooting gap. They emit only
 fixed enums, never raw assertions, provider responses, stderr, bucket names or
@@ -282,10 +365,12 @@ values with formatting errors. Surrounding pasted whitespace is now stripped
 only in memory, consistently for both native authentication and restic/S3.
 Internal whitespace remains invalid. No stored secret is modified or regenerated.
 Receipts expose only boolean presence/surrounding-whitespace flags, never values,
-lengths or hashes. A new passing off-site receipt is still required.
+lengths or hashes. The later passing run above supersedes that failed attempt.
 
-Before Step 9 is complete: verify B2 credentials/destination, approve key custody
-and retention, obtain separate authority before any non-synthetic capture,
-capture and recover the approved staging bundle, activate/observe backup and deletion schedules,
-configure and test alert delivery, appoint incident responders, and record a
-provider-level recovery exercise. See [monitoring/incident response](monitoring-and-incidents.md).
+Before Step 9 is complete: approve and configure the permanent B2 repository,
+key custody and activation; obtain separate authority/retention approval before
+any non-synthetic capture; capture and recover the approved staging bundle;
+separately authorize and activate/observe backup and deletion schedules;
+configure and test alert delivery; document the solo-responder continuity risk;
+and record a provider-level recovery exercise.
+See [monitoring/incident response](monitoring-and-incidents.md).

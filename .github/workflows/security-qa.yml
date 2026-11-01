@@ -16,13 +16,21 @@ on:
         required: false
         default: false
         type: boolean
+      staging_operation:
+        description: Protected staging-only vault operation; no application deployment
+        required: false
+        default: none
+        type: choice
+        options: [none, verify, capture-restore, check, monitor, alert-test]
 
 permissions:
   contents: read
 
 concurrency:
   group: security-qa-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel an in-flight encrypted capture/recovery because another CI
+  # run starts. Credential-free PR/push QA retains its normal cancellation.
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' || !inputs.staging_operation || inputs.staging_operation == 'none' }}
 
 jobs:
   local-security:
@@ -69,6 +77,18 @@ jobs:
       # Authenticated API/Storage/concurrency/email acceptance remains a
       # separate explicit disposable-stack release gate; see the QA guide.
       # Do not upload traces, credentials, session state or private evidence.
+
+  staging-operations:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging' && inputs.staging_operation && inputs.staging_operation != 'none'
+    needs: local-security
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/backups-and-restore.yml
+    with:
+      operation: ${{ inputs.staging_operation }}
+    # No secrets: inherit. The called jobs explicitly name staging-operations,
+    # so only that protected environment releases its credentials after review.
 
   isolated-full-stack:
     if: github.event_name == 'workflow_dispatch' && inputs.full_stack
