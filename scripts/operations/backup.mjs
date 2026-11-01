@@ -28,22 +28,29 @@ export function validateServiceKey(env) {
 }
 
 export async function capture(env, adapters = {}) {
+  let phase = "capture-policy";
+  try {
   const selected = validateBackupPolicy(env); validateServiceKey(env);
   assert.equal(env.OPS_CONFIRM, `${registry.staging.supabaseProjectRef}:backup`, "Explicit backup confirmation required.");
   const id = randomUUID(), startedAt = new Date().toISOString();
   const storage = adapters.restic ?? resticClient(env);
+  phase = "capture-vault";
   await storage.verify(selected.repositoryId);
+  phase = "capture-connect";
   const { client } = await (adapters.connect ?? connect)(env);
   try {
+    phase = "capture-snapshot";
     await client.query("set idle_in_transaction_session_timeout='20min'");
     await client.query("begin isolation level repeatable read read only");
     if (selected.dataScope === "synthetic-only") await assertSyntheticSource(client);
     const exported = validateExportedSnapshot((await client.query("select pg_export_snapshot() as id")).rows[0].id);
+    phase = "capture-inventory";
     validateBuckets((await client.query("select id,public from storage.buckets order by id")).rows);
     const objects = (await client.query(inventorySql)).rows;
     assert.ok(objects.length <= selected.maxObjects);
     const bytes = objects.reduce((sum, object) => sum + validateObject(object).size, 0);
     assert.ok(bytes <= selected.maxStorageBytes);
+    phase = "capture-manifest";
     const database = await databaseManifest(client);
     const workerEnv = { ...env, OPS_RUN_ID: id, OPS_EXPORTED_SNAPSHOT: exported };
     // A new child environment carries the exported snapshot only in memory.
@@ -51,16 +58,20 @@ export async function capture(env, adapters = {}) {
     const producer = component => [process.execPath, fileURLToPath(new URL("./producer.mjs", import.meta.url)), component];
     const snapshots = {};
     for (const component of ["database", "media", "verification"]) {
+      phase = `capture-${component}`;
       snapshots[component] = await worker(workerEnv).backup(component, id, producer(component));
     }
+    phase = "capture-consistency";
     const { client: current } = await (adapters.connect ?? connect)(env);
     try { assert.equal(inventoryDigest((await current.query(inventorySql)).rows), inventoryDigest(objects), "Storage changed; do not certify this capture."); }
     finally { await current.end(); }
+    phase = "capture-integrity";
     await storage.check();
     const manifest = { version: 1, complete: true, projectRef: registry.staging.supabaseProjectRef, runId: id, dataScope: selected.dataScope,
       startedAt, completedAt: new Date().toISOString(), inventorySha256: inventoryDigest(objects),
       database, storage: { objects: objects.length, bytes, inventory: objects }, snapshots,
       excludes: ["managed-role-passwords", "auth-provider-settings-and-api-keys", "smtp-credentials", "root-encryption-key", "edge-functions", "off-site-repository-key"] };
+    phase = "capture-bundle";
     snapshots.bundle = await worker({ ...workerEnv, OPS_BUNDLE_MANIFEST: JSON.stringify(manifest) }).backup("bundle", id, producer("bundle"));
     await client.query("rollback");
     // Counts/opaque snapshot IDs only. The private encrypted manifest carries
@@ -68,6 +79,11 @@ export async function capture(env, adapters = {}) {
     return { version: 1, status: "captured", runId: id, startedAt, completedAt: manifest.completedAt,
       projectRef: registry.staging.supabaseProjectRef, objects: objects.length, bytes, snapshots, restoreTested: false };
   } finally { await client.query("rollback").catch(() => {}); await client.end(); }
+  } catch (error) {
+    error.operationPhase ??= phase;
+    error.operationCodes ??= ["CAPTURE_STEP_FAILED"];
+    throw error;
+  }
 }
 
 async function main() {

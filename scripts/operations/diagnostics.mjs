@@ -18,9 +18,40 @@ const resticPatterns = [
   [/x509|certificate verification|certificate signed by unknown/i, "TLS_VERIFICATION_FAILED"],
   [/dial tcp|no such host|connection refused|network is unreachable/i, "NETWORK_CONNECTION_FAILED"],
   [/repository.*already.*(?:exist|initializ)/i, "REPOSITORY_ALREADY_EXISTS"],
+  [/repository is already locked|unable to create lock|repository.*locked exclusively/i, "REPOSITORY_LOCKED"],
   [/wrong password or no key found|no key found|unable to open config file/i, "REPOSITORY_CREDENTIAL_OR_CONFIG_REJECTED"],
 ];
 const resticCodes = new Set(resticPatterns.map(([, code]) => code));
+export const capturePhases = Object.freeze(["capture-policy", "capture-vault", "capture-connect", "capture-snapshot", "capture-inventory",
+  "capture-manifest", "capture-database", "capture-media", "capture-verification", "capture-consistency", "capture-integrity", "capture-bundle"]);
+const dumpPatterns = [
+  [/password authentication failed|authentication failed/i, "DATABASE_AUTHENTICATION_REJECTED"],
+  [/permission denied|query would be affected by row-level security/i, "DATABASE_PERMISSION_DENIED"],
+  [/invalid snapshot identifier|invalid snapshot data|snapshot.*does not exist|snapshot.*must be called|must be called before any query/i, "DUMP_SNAPSHOT_REJECTED"],
+  [/server version.*pg_dump version|aborting because of server version mismatch/i, "DUMP_VERSION_REJECTED"],
+  [/certificate verify failed|certificate verification failed|root certificate|SSL error|server does not support SSL/i, "DUMP_TLS_REJECTED"],
+  [/could not translate host name|could not connect|connection.*(?:refused|timed out)|network is unreachable/i, "DATABASE_NETWORK_UNAVAILABLE"],
+  [/timeout expired|statement timeout|lock timeout|canceling statement/i, "DATABASE_QUERY_TIMEOUT"],
+  [/Cannot connect to the Docker daemon|permission denied.*docker.sock/i, "DUMP_DOCKER_UNAVAILABLE"],
+  [/pull access denied|manifest unknown|toomanyrequests|unauthenticated pull rate limit/i, "DUMP_IMAGE_UNAVAILABLE"],
+  [/read-only transaction/i, "DUMP_READ_ONLY_REFUSAL"],
+];
+const producerCodes = new Set([...dumpPatterns.map(([, code]) => code), "DATABASE_CONNECTION_LIMIT", "DATABASE_PREFLIGHT_FAILED",
+  "DUMP_DATABASE_CONNECT_FAILED", "DUMP_SNAPSHOT_FAILED", "DUMP_TOOL_FAILED", "DUMP_COMMAND_FAILED", "BACKUP_PRODUCER_FAILED"]);
+
+export function dumpFailureCodes(privateDiagnostic) {
+  const codes = dumpPatterns.filter(([pattern]) => pattern.test(privateDiagnostic)).map(([, code]) => code);
+  return codes.length ? codes : ["DUMP_COMMAND_FAILED"];
+}
+
+export function producerFailureCodes(error) {
+  const codes = Array.isArray(error?.operationCodes) ? [...producerCodes].filter(code => error.operationCodes.includes(code)) : [];
+  return codes.length ? codes : ["BACKUP_PRODUCER_FAILED"];
+}
+
+export function producerFailureMarker(error) {
+  return `UCM_BACKUP_FAILURE:${producerFailureCodes(error).join(",")}\n`;
+}
 
 export function databaseFailureCode(error) {
   // No username, host, URL, SQL, password, server response or Error message.
@@ -33,7 +64,11 @@ export function databaseFailureCode(error) {
 export function resticFailureCodes(privateDiagnostic) {
   // Return only fixed categories. Never return a matching fragment, provider
   // response, bucket/endpoint/key, command, Error, stack or signed URL.
-  return resticPatterns.filter(([pattern]) => pattern.test(privateDiagnostic)).map(([, code]) => code);
+  const codes = resticPatterns.filter(([pattern]) => pattern.test(privateDiagnostic)).map(([, code]) => code);
+  for (const match of privateDiagnostic.matchAll(/UCM_BACKUP_FAILURE:([A-Z_,]+)/g)) {
+    for (const code of match[1].split(",")) if (producerCodes.has(code)) codes.push(code);
+  }
+  return [...new Set(codes)];
 }
 
 export function backblazeFailure(error, phase) {
