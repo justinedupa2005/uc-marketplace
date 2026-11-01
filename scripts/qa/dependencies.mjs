@@ -24,7 +24,8 @@ try {
   const production = audit(["--omit=dev"]);
   const lock = JSON.parse(readFileSync(path.join(root, "package-lock.json"), "utf8"));
   const policy = JSON.parse(readFileSync(new URL("./dependency-policy.json", import.meta.url), "utf8"));
-  console.log(`DEPENDENCY_REVIEW_JSON:${JSON.stringify(reviewDependencyAudits(full, production, lock, policy))}`);
+  const developmentPolicy = JSON.parse(readFileSync(new URL("./dependency-policy-minimatch.json", import.meta.url), "utf8"));
+  console.log(`DEPENDENCY_REVIEW_JSON:${JSON.stringify(reviewDependencyAudits(full, production, lock, policy, { developmentPolicy }))}`);
 } catch {
   console.error("Dependency security gate failed. Review current audits and the expiring development policy; private npm diagnostics were withheld.");
   process.exitCode = 1;

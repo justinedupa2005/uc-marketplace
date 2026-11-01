@@ -13,8 +13,9 @@ existing optional webhook sends only to a separately approved endpoint; it does
 not send mail merely because `alertEmail` is configured.
 
 On 2026-11-01 the owner authorized implementation and alert testing and selected
-**Brevo** for operational alerts. Sender verification and a dedicated API key
-still need configuration; no delivery test has run. `monitoringApproved` is
+**Brevo** for operational alerts and confirmed the verified sender as
+`ucmarketplace.security@gmail.com`, also the approved recipient. The dedicated
+API key still needs confirmation; no delivery test has run. `monitoringApproved` is
 recorded; `monitoringEnabled`, external notifications and the repository schedule
 gates remain disabled. No provider account, paid subscription, SMTP change or
 production deployment was inferred from that approval.

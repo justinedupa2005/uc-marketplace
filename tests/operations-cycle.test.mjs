@@ -151,6 +151,7 @@ test("the registered QA workflow calls same-commit operations only after CI with
   assert.ok(!/^\s*secrets:/m.test(job));
   assert.match(job, /actions: read/);
   assert.match(workflow, /cancel-in-progress: \$\{\{.*inputs\.staging_operation == 'none'/);
+  assert.match(workflow, /group: security-qa-.*'operations' \|\| 'quality'/);
   const called = await readFile(new URL("../.github/workflows/backups-and-restore.yml", import.meta.url), "utf8");
   assert.match(called, /workflow_call:\s+inputs:\s+operation:/);
 });

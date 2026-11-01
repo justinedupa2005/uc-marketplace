@@ -27,7 +27,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: security-qa-${{ github.workflow }}-${{ github.ref }}
+  group: security-qa-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.staging_operation && inputs.staging_operation != 'none' && 'operations' || 'quality' }}
   # Never cancel an in-flight encrypted capture/recovery because another CI
   # run starts. Credential-free PR/push QA retains its normal cancellation.
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' || !inputs.staging_operation || inputs.staging_operation == 'none' }}

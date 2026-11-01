@@ -18,12 +18,14 @@ publishes the exact-bundle recovery implementation. Its first CI run passed
 type checking, lint, regression tests and database validation, then **failed the
 dependency gate** on newly reported development-only minimatch advisory
 [GHSA-g3hv-75wg-m249](https://github.com/isaacs/minimatch/security/advisories/GHSA-g3hv-75wg-m249).
-The installed audit reports 16 moderate lint-tooling findings; the compatible
-upstream fix/temporary scoped deferral still requires review. The existing gate
-has not been bypassed or changed to ignore them. The credentialed capture/restore
+The installed audit reports 16 moderate lint-tooling findings. The owner then
+approved a seven-day, exact-path/version development-only exception, expiring
+November 8 at 00:00 Asia/Manila; see [the reviewed dependency policy](ci-dependency-security.md).
+Production findings and every new/changed advisory still fail CI. The credentialed capture/restore
 has **not** run. Daily backups, monitoring schedules and alert delivery remain
-disabled. Brevo was selected for alerts; verified sender/API-key configuration
-and one consented inbox-confirmed delivery test remain outstanding.
+disabled. Brevo was selected for alerts, with verified sender
+`ucmarketplace.security@gmail.com`; the dedicated API key and one consented,
+inbox-confirmed delivery test remain outstanding.
 
 ## Verified provider baseline
 

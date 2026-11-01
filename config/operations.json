@@ -36,8 +36,8 @@
     "monitoringApproved": true,
     "alertEmail": "ucmarketplace.security@gmail.com",
     "alertProvider": "brevo",
-    "alertSenderEmail": null,
-    "alertSenderVerified": false,
+    "alertSenderEmail": "ucmarketplace.security@gmail.com",
+    "alertSenderVerified": true,
     "alertWebhookOrigin": null
   },
   "production": { "enabled": false, "monitoringEnabled": false }
