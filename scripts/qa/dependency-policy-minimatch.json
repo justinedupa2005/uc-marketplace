@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "approved": true,
+  "approvedBy": "justinedupa2005",
+  "scope": "development-only",
+  "reviewedOn": "2026-11-01",
+  "expiresOn": "2026-11-08",
+  "timezone": "Asia/Manila",
+  "advisory": "https://github.com/advisories/GHSA-g3hv-75wg-m249",
+  "severity": "moderate",
+  "reason": "Owner explicitly approved seven days for this exact development-only lint chain. The fixed minimatch major removes APIs used by the lint ecosystem; no compatible backport is published. npm proposes incompatible eslint 4 / eslint-config-next 0 downgrades, not a reviewed repair. No forced major override or dependency change is authorized by this exception.",
+  "mitigation": "No student input supplies lint patterns. Credential-free CI uses disposable bounded runners and read-only tokens. Privileged operations install the unchanged reviewed lockfile before releasing step-only credentials. Reject every production finding, new advisory, severity increase, package/path/version/edge/fix change and expiry. Re-review upstream before 2026-11-08 00:00 Asia/Manila; no automatic renewal.",
+  "packages": {
+    "@eslint-community/eslint-utils": { "nodes": { "node_modules/@eslint-community/eslint-utils": "4.10.1", "node_modules/@next/eslint-plugin-next/node_modules/@eslint-community/eslint-utils": "4.9.1" }, "via": ["eslint"], "fix": "eslint-downgrade" },
+    "@eslint/config-array": { "nodes": { "node_modules/@eslint/config-array": "0.21.2" }, "via": ["minimatch"], "fix": "eslint-downgrade" },
+    "@eslint/eslintrc": { "nodes": { "node_modules/@eslint/eslintrc": "3.3.6" }, "via": ["minimatch"], "fix": "eslint-downgrade" },
+    "@next/eslint-plugin-next": { "nodes": { "node_modules/@next/eslint-plugin-next": "16.4.3" }, "via": ["@eslint-community/eslint-utils"], "fix": "next-config-downgrade" },
+    "@typescript-eslint/eslint-plugin": { "nodes": { "node_modules/@typescript-eslint/eslint-plugin": "8.68.0" }, "via": ["@typescript-eslint/parser", "@typescript-eslint/type-utils", "@typescript-eslint/utils", "eslint"], "fix": [true, "next-config-downgrade"] },
+    "@typescript-eslint/parser": { "nodes": { "node_modules/@typescript-eslint/parser": "8.68.0" }, "via": ["@typescript-eslint/typescript-estree", "eslint"], "fix": "next-config-downgrade" },
+    "@typescript-eslint/type-utils": { "nodes": { "node_modules/@typescript-eslint/type-utils": "8.68.0" }, "via": ["@typescript-eslint/typescript-estree", "@typescript-eslint/utils", "eslint"], "fix": [true, "next-config-downgrade"] },
+    "@typescript-eslint/typescript-estree": { "nodes": { "node_modules/@typescript-eslint/typescript-estree": "8.68.0" }, "via": ["minimatch"], "fix": "next-config-downgrade" },
+    "@typescript-eslint/utils": { "nodes": { "node_modules/@typescript-eslint/utils": "8.68.0" }, "via": ["@eslint-community/eslint-utils", "@typescript-eslint/typescript-estree", "eslint"], "fix": "next-config-downgrade" },
+    "eslint": { "nodes": { "node_modules/eslint": "9.39.5" }, "via": ["@eslint-community/eslint-utils", "@eslint/config-array", "@eslint/eslintrc", "minimatch"], "fix": "eslint-downgrade" },
+    "eslint-config-next": { "nodes": { "node_modules/eslint-config-next": "16.4.3" }, "via": ["@next/eslint-plugin-next", "eslint", "eslint-plugin-import", "eslint-plugin-jsx-a11y", "eslint-plugin-react", "typescript-eslint"], "fix": "next-config-downgrade" },
+    "eslint-plugin-import": { "nodes": { "node_modules/eslint-plugin-import": "2.32.0" }, "via": ["minimatch"], "fix": [true, "next-config-downgrade"] },
+    "eslint-plugin-jsx-a11y": { "nodes": { "node_modules/eslint-plugin-jsx-a11y": "6.10.2" }, "via": ["minimatch"], "fix": "next-config-downgrade" },
+    "eslint-plugin-react": { "nodes": { "node_modules/eslint-plugin-react": "7.37.5" }, "via": ["minimatch"], "fix": [true, "next-config-downgrade"] },
+    "minimatch": { "nodes": { "node_modules/@typescript-eslint/typescript-estree/node_modules/minimatch": "10.2.6", "node_modules/minimatch": "3.1.5" }, "via": ["https://github.com/advisories/GHSA-g3hv-75wg-m249"], "fix": "eslint-downgrade" },
+    "typescript-eslint": { "nodes": { "node_modules/typescript-eslint": "8.68.0" }, "via": ["@typescript-eslint/eslint-plugin", "@typescript-eslint/parser", "@typescript-eslint/typescript-estree", "@typescript-eslint/utils", "eslint"], "fix": "next-config-downgrade" }
+  }
+}

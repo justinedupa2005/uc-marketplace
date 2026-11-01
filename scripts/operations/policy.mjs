@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 export const registry = JSON.parse(await readFile(new URL("../../config/environments.json", import.meta.url), "utf8"));
 export const policy = JSON.parse(await readFile(new URL("../../config/operations.json", import.meta.url), "utf8"));
 export const buckets = Object.freeze(["listing-images", "avatars", "student-verifications"]);
-export const components = Object.freeze(["database", "media", "verification", "bundle"]);
+export const components = Object.freeze(["database", "media", "verification", "bundle", "restore-evidence"]);
 export const snapshotId = /^[a-f0-9]{64}$/;
 export const runId = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 
@@ -18,8 +18,17 @@ export function validateTarget(env) {
 
 export function validateBackupPolicy(env, selected = policy.staging) {
   validateTarget(env);
-  assert.equal(selected.enabled, true, "Backup activation requires reviewed policy.");
-  assert.equal(selected.retentionApproved, true, "Approve retention before copying private data.");
+  assert.ok(selected.enabled === true || selected.manualBackupEnabled === true, "Backup activation requires reviewed policy.");
+  assert.equal(selected.dataScope, "synthetic-only", "Only synthetic staging data is approved for operations.");
+  if (selected.dataScope === "synthetic-only") {
+    assert.equal(selected.syntheticPolicyApproval?.approved, true);
+    assert.equal(selected.syntheticPolicyApproval?.environment, "staging");
+    assert.equal(selected.syntheticPolicyApproval?.dataScope, "synthetic-only");
+    assert.equal(selected.syntheticPolicyApproval?.activationApproved, true, "Synthetic capture activation is not approved.");
+    assert.equal(selected.syntheticPolicyApproval?.sourceAttestedSyntheticOnly, true, "Staging must be attested synthetic-only.");
+    assert.equal(selected.syntheticPolicyApproval?.retentionDays, selected.retentionDays);
+    assert.equal(env.OPS_DATA_SCOPE, "synthetic-only", "Explicit synthetic-only capture scope required.");
+  }
   assert.ok(typeof selected.owner === "string" && selected.owner.trim().length > 2, "A backup owner is required.");
   assert.ok(Number.isInteger(selected.retentionDays) && selected.retentionDays >= 1 && selected.retentionDays <= 30);
   assert.ok(Number.isInteger(selected.verificationRetentionDays) && selected.verificationRetentionDays >= 1
@@ -36,6 +45,23 @@ export function validateBackupPolicy(env, selected = policy.staging) {
   assert.ok(Number.isSafeInteger(selected.maxObjects) && selected.maxObjects > 0 && selected.maxObjects <= 100000);
   assert.ok(Number.isSafeInteger(selected.maxStorageBytes) && selected.maxStorageBytes > 0 && selected.maxStorageBytes <= 107374182400);
   return selected;
+}
+
+export const syntheticSourceSql = `select
+  (select count(*)::int from auth.users) as accounts,
+  (select count(*)::int from auth.users where coalesce(raw_app_meta_data->>'staging_fixture','')<>'uc-marketplace-staging-v1'
+    or email not in ('staging-admin@example.test','staging-pending@example.test','staging-seller@example.test','staging-buyer@example.test','staging-suspended@example.test')) as unknown_accounts,
+  (select count(*)::int from public.profiles p where not exists (select 1 from auth.users u where u.id=p.id)) as unknown_profiles,
+  (select count(*)::int from storage.objects o where not exists (select 1 from auth.users u where u.id::text=o.owner_id
+    and u.raw_app_meta_data->>'staging_fixture'='uc-marketplace-staging-v1')) as unknown_object_owners`;
+
+export async function assertSyntheticSource(client) {
+  const rows = (await client.query(syntheticSourceSql)).rows;
+  assert.equal(rows.length, 1);
+  assert.equal(Number(rows[0].accounts), 5, "Capture requires exactly the five owned staging fixtures.");
+  for (const name of ["unknown_accounts", "unknown_profiles", "unknown_object_owners"]) {
+    assert.equal(Number(rows[0][name]), 0, "Non-owned or non-synthetic source data blocks capture.");
+  }
 }
 
 export function validateObject(object) {

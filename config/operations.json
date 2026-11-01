@@ -2,10 +2,25 @@
   "version": 1,
   "staging": {
     "enabled": false,
+    "manualBackupEnabled": true,
+    "dataScope": "synthetic-only",
     "provider": "backblaze-b2",
     "repository": "s3:https://s3.us-west-004.backblazeb2.com/ucmarketplace-backups-2026/ucmarketplace/staging-synthetic/repository-v1",
     "repositoryId": "81e83133bb89e2f717be3d7477e4888f9744414081f2984804ecd24408953bc9",
     "owner": "Justine T. Dupa",
+    "deputy": null,
+    "ownershipModel": "solo-maintainer",
+    "syntheticPolicyApproval": {
+      "approved": true,
+      "environment": "staging",
+      "dataScope": "synthetic-only",
+      "dailyAt": "02:17",
+      "timezone": "Asia/Manila",
+      "retentionDays": 7,
+      "activationApproved": true,
+      "sourceAttestedSyntheticOnly": true,
+      "deletionApproved": false
+    },
     "retentionApproved": true,
     "retentionDays": 7,
     "verificationRetentionDays": 7,
@@ -18,7 +33,11 @@
     "databaseBudgetBytes": 500000000,
     "storageBudgetBytes": 1000000000,
     "monitoringEnabled": false,
+    "monitoringApproved": true,
     "alertEmail": "ucmarketplace.security@gmail.com",
+    "alertProvider": "brevo",
+    "alertSenderEmail": "ucmarketplace.security@gmail.com",
+    "alertSenderVerified": true,
     "alertWebhookOrigin": null
   },
   "production": { "enabled": false, "monitoringEnabled": false }

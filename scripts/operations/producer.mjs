@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { connect, dumpDatabase, importSnapshot, inventorySql } from "./database.mjs";
-import { validateBackupPolicy, validateObject, registry, runId } from "./policy.mjs";
+import { validateBackupPolicy, validateObject, registry, runId, assertSyntheticSource } from "./policy.mjs";
 import { boundedBody, inventoryDigest, storagePack, writeStream } from "./storage.mjs";
+import { validateRestoreEvidence } from "./bundle.mjs";
 
 // Private stdout is consumed only by restic, never inherited by the terminal.
 try {
@@ -15,6 +16,7 @@ try {
     const { client } = await connect(env), { client: current } = await connect(env);
     try {
       await importSnapshot(client, env.OPS_EXPORTED_SNAPSHOT);
+      if (selected.dataScope === "synthetic-only") await assertSyntheticSource(client);
       const objects = (await client.query(inventorySql)).rows;
       assert.ok(objects.length <= selected.maxObjects);
       const total = objects.reduce((size, object) => size + validateObject(object).size, 0);
@@ -41,5 +43,10 @@ try {
     assert.equal(manifest.projectRef, registry.staging.supabaseProjectRef);
     assert.equal(manifest.inventorySha256.length, createHash("sha256").digest("hex").length);
     await writeStream(process.stdout, JSON.stringify(manifest));
+  } else if (component === "restore-evidence") {
+    const evidence = JSON.parse(env.OPS_RESTORE_EVIDENCE);
+    validateRestoreEvidence(evidence, selected.repositoryId, evidence.sourceSha);
+    assert.equal(evidence.runId, env.OPS_RUN_ID);
+    await writeStream(process.stdout, JSON.stringify(evidence));
   } else throw new Error();
 } catch { process.stderr.write("Backup producer failed; private details withheld.\n"); process.exitCode = 1; }

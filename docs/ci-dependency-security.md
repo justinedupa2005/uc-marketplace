@@ -1,5 +1,43 @@
 # Step 2: CI and dependency security
 
+## Step 9 follow-up: 2026-11-01
+
+The October clean audit below is historical. The first Step 9 staging PR run
+failed closed on newly reported minimatch advisory
+[GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249): **16 moderate
+development-tooling findings**, all in the lint dependency chain. No affected
+production dependency was found. The upstream fix is in minimatch 11; forcing
+that major into older consumers can break removed APIs. The
+[ESLint upstream discussion](https://github.com/eslint/eslint/issues/21463)
+still tracks ecosystem compatibility. npm's eslint 4 / Next lint config 0
+downgrades are not accepted fixes. No package or lockfile was changed.
+
+The owner explicitly approved a **seven-day, development-only exception** on
+November 1. `scripts/qa/dependency-policy-minimatch.json` binds the exact 16
+packages, 18 installed paths/versions, advisory edges, moderate severity and
+current npm fix proposals. Repeated runs with npm 10.9.3 and CI's 10.9.9 exposed
+order-dependent fix metadata in four indirect findings: `@typescript-eslint/eslint-plugin`,
+`@typescript-eslint/type-utils`, `eslint-plugin-import` and `eslint-plugin-react`.
+Arborist's reviewed `Vuln.fixAvailable` setter propagates top-level fixes through
+the graph: these findings can report its default `true` or the same rejected
+`eslint-config-next@0.2.4` downgrade. Only those two semantic variants are recorded
+for those four packages; no affected path/version/advisory was added. Root fixes
+and unrelated/new proposals still fail. This corrects nondeterministic resolver
+metadata, not an additional vulnerability exception.
+CI still rejects every production advisory, additional
+finding, changed dependency/path/version/fix, malformed evidence or escalation.
+It reports `passed_with_reviewed_development_risk`, never a clean audit.
+Approval expires **November 8, 2026 at 00:00 Asia/Manila** (November 7, 16:00 UTC).
+The code rejects automatic renewal or extending that window. Re-review upstream
+and test compatible updates before expiry; do not disable the gate.
+
+Students cannot supply lint patterns. Credential-free QA runs in disposable,
+time-bounded runners with read-only tokens. Protected operations install the
+unchanged reviewed lockfile before releasing credentials only to the operation
+step; the lint denial-of-service risk is documented, not dismissed. This limited
+approval is not production deployment approval. The older braces policy and its
+tests remain historical; the live CLI selects the new explicit minimatch review.
+
 ## Staging deployment follow-up: 2026-10-25
 
 The historical October 20 review below is not the current audit result. During

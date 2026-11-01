@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { reviewDependencyAudits } from "../scripts/qa/lib/dependency-review.mjs";
+import { reviewDependencyAudits, dependencyFailureCode, dependencyFailureDetails } from "../scripts/qa/lib/dependency-review.mjs";
 
 const policy = JSON.parse(readFileSync(new URL("../scripts/qa/dependency-policy.json", import.meta.url), "utf8"));
 const now = new Date("2026-10-20T12:00:00Z");
@@ -75,4 +75,84 @@ test("malformed, truncated or network-error audits cannot be mistaken for clean 
     const f = fixture(); f.full = full; assert.throws(() => review(f));
   }
   const f = fixture(); f.full.metadata.vulnerabilities.total = 0; assert.throws(() => review(f));
+});
+
+const minimatchPolicy = JSON.parse(readFileSync(new URL("../scripts/qa/dependency-policy-minimatch.json", import.meta.url), "utf8"));
+function minimatchFixture() {
+  const entries = {}, lock = { packages: {} };
+  for (const [name, value] of Object.entries(minimatchPolicy.packages)) {
+    for (const [node, version] of Object.entries(value.nodes)) lock.packages[node] = { version, dev: true };
+    const fix = Array.isArray(value.fix) ? value.fix[0] : value.fix;
+    entries[name] = { name, severity: "moderate", nodes: Object.keys(value.nodes),
+      via: name === "minimatch" ? [{ name, url: minimatchPolicy.advisory, severity: "moderate", range: "<11.0.1" }] : [...value.via],
+      fixAvailable: fix === true ? true : fix === "eslint-downgrade" ? { name: "eslint", version: "4.0.0", isSemVerMajor: true }
+        : { name: "eslint-config-next", version: "0.2.4", isSemVerMajor: true } };
+  }
+  return { full: report(entries), production: report(), lock, developmentPolicy: structuredClone(minimatchPolicy) };
+}
+const reviewMinimatch = (f, time = "2026-11-01T04:00:00Z") => reviewDependencyAudits(f.full, f.production, f.lock, policy,
+  { now: new Date(time), developmentPolicy: f.developmentPolicy });
+
+test("the explicitly approved minimatch deferral binds all 16 moderate development packages and expires in Philippine time", () => {
+  const result = reviewMinimatch(minimatchFixture());
+  assert.equal(result.status, "passed_with_reviewed_development_risk");
+  assert.equal(result.productionFindings, 0); assert.equal(result.deferredDevelopmentPackages, 16);
+  assert.equal(result.approvedBy, "justinedupa2005"); assert.equal(result.expiresOn, "2026-11-08");
+  assert.equal(result.expiresAt, "2026-11-07T16:00:00.000Z"); assert.equal(result.timezone, "Asia/Manila");
+  assert.doesNotThrow(() => reviewMinimatch(minimatchFixture(), "2026-11-07T15:59:59Z"));
+  for (const time of ["2026-10-31T15:59:59Z", "2026-11-07T16:00:00Z", "2026-11-08T00:00:00Z"])
+    assert.throws(() => reviewMinimatch(minimatchFixture(), time));
+});
+
+test("the seven-day exception cannot authorize production risk, new advisories, changed dependencies, fixes or renewal", () => {
+  const mutations = [
+    f => { f.production = report({ minimatch: f.full.vulnerabilities.minimatch }); },
+    f => { f.full.vulnerabilities.minimatch.severity = "high"; f.full = report(f.full.vulnerabilities); },
+    f => { f.full.vulnerabilities.minimatch.via.push({ name: "minimatch", url: "https://github.com/advisories/GHSA-new", severity: "moderate", range: "*" }); },
+    f => { f.full.vulnerabilities.minimatch.via[0].range = "<11.0.4"; },
+    f => { f.full.vulnerabilities.minimatch.nodes.push("node_modules/new/node_modules/minimatch"); },
+    f => { f.lock.packages["node_modules/minimatch"].dev = false; },
+    f => { f.lock.packages["node_modules/minimatch"].version = "3.1.6"; },
+    f => { f.full.vulnerabilities.eslint.via.push("minimatch"); },
+    f => { f.full.vulnerabilities.minimatch.fixAvailable = { name: "minimatch", version: "11.0.3", isSemVerMajor: false }; },
+    f => { f.full.vulnerabilities.minimatch.fixAvailable = true; },
+    f => { f.full.vulnerabilities["eslint-plugin-import"].fixAvailable = false; },
+    f => { delete f.full.vulnerabilities["eslint-plugin-react"]; f.full = report(f.full.vulnerabilities); },
+    f => { f.full.vulnerabilities.extra = { name: "extra", severity: "low", via: ["minimatch"], nodes: ["node_modules/extra"] }; f.full = report(f.full.vulnerabilities); },
+    f => { f.developmentPolicy.approved = false; },
+    f => { f.developmentPolicy.approvedBy = "unapproved-owner"; },
+    f => { f.developmentPolicy.scope = "all-dependencies"; },
+    f => { f.developmentPolicy.expiresOn = "2026-11-09"; },
+    f => { f.developmentPolicy.reviewedOn = "2026-11-02"; f.developmentPolicy.expiresOn = "2026-11-09"; },
+  ];
+  for (const mutate of mutations) { const f = minimatchFixture(); mutate(f); assert.throws(() => reviewMinimatch(f)); }
+  for (const full of [{}, { ...report(), error: { code: "NETWORK" } }, { ...report(), vulnerabilities: [] }]) {
+    const f = minimatchFixture(); f.full = full; assert.throws(() => reviewMinimatch(f));
+  }
+});
+
+test("dependency diagnostics expose only fixed review codes, never raw npm errors", () => {
+  assert.equal(dependencyFailureCode(new Error("private registry diagnostic")), "AUDIT_COMMAND_OR_NETWORK_FAILED");
+  assert.equal(dependencyFailureCode({ reviewCode: "untrusted secret-like input" }), "AUDIT_COMMAND_OR_NETWORK_FAILED");
+  assert.deepEqual(dependencyFailureDetails({ reviewCode: "private", reviewPackage: "private", reviewFixClass: "private" }), { code: "AUDIT_COMMAND_OR_NETWORK_FAILED" });
+  assert.deepEqual(dependencyFailureDetails({ reviewFix: { name: "private", version: "private", isSemVerMajor: false } }), { code: "AUDIT_COMMAND_OR_NETWORK_FAILED" });
+  const f = minimatchFixture(); f.full.vulnerabilities.minimatch.fixAvailable = true;
+  try { reviewMinimatch(f); assert.fail("Must refuse changed audit evidence"); }
+  catch (error) { assert.equal(dependencyFailureCode(error), "MINIMATCH_FIX_CHANGED"); }
+});
+
+test("only the reviewed default/propagated fix variants for four indirect findings are accepted", () => {
+  const indirect = ["@typescript-eslint/eslint-plugin", "@typescript-eslint/type-utils", "eslint-plugin-import", "eslint-plugin-react"];
+  assert.deepEqual(Object.entries(minimatchPolicy.packages).filter(([, value]) => Array.isArray(value.fix)).map(([name]) => name), indirect);
+  for (const name of indirect) {
+    for (const fixAvailable of [true, { name: "eslint-config-next", version: "0.2.4", isSemVerMajor: true }]) {
+      const f = minimatchFixture(); f.full.vulnerabilities[name].fixAvailable = fixAvailable;
+      assert.equal(reviewMinimatch(f).deferredDevelopmentPackages, 16);
+    }
+    for (const fixAvailable of [false, { name, version: "9.0.0", isSemVerMajor: false },
+      { name: "eslint-config-next", version: "16.4.4", isSemVerMajor: false }]) {
+      const f = minimatchFixture(); f.full.vulnerabilities[name].fixAvailable = fixAvailable;
+      assert.throws(() => reviewMinimatch(f));
+    }
+  }
 });

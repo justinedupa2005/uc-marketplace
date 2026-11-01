@@ -4,7 +4,7 @@ import { components, runId, snapshotId } from "./policy.mjs";
 
 export function resticClient(env, execute = command) {
   const childEnv = controlledEnvironment(env);
-  const run = (args, options = {}) => execute(env.OPS_RESTIC_BINARY || "restic", ["--no-cache", ...args], { env: childEnv, ...options });
+  const run = (args, options = {}) => execute(env.OPS_RESTIC_BINARY || "restic", ["--no-cache", ...args], { env: childEnv, resticDiagnostics: true, ...options });
   return {
     async verify(expectedId) {
       const version = (await run(["version"])).toString();

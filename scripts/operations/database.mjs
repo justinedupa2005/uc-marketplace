@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import pg from "pg";
 import { readFile } from "node:fs/promises";
 import { validateStagingCa } from "../staging/tls.mjs";
-import { validateTarget } from "./policy.mjs";
+import { validateTarget, assertSyntheticSource } from "./policy.mjs";
 import { command, controlledEnvironment } from "./process.mjs";
 import path from "node:path";
 import { assertLocalDockerEndpoint } from "../qa/lib/local-stack.mjs";
@@ -26,6 +26,7 @@ export async function connect(env) {
   await client.connect();
   try {
     await client.query("set default_transaction_read_only=on");
+    await client.query("set timezone='UTC'");
     return { client, pgEnv: { PGHOST: options.host, PGPORT: "5432", PGDATABASE: options.database, PGUSER: options.user,
       PGPASSWORD: options.password, PGSSLMODE: "verify-full", PGSSLROOTCERT: env.OPS_CA_FILE, PGCONNECT_TIMEOUT: "15", PGOPTIONS: "-c default_transaction_read_only=on" } };
   } catch { await client.end(); throw new Error("Read-only database connection failed."); }
@@ -61,7 +62,22 @@ export async function databaseManifest(client) {
     from pg_publication_tables t where t.pubname=p.pubname),'[]'::jsonb) as tables from pg_publication p where p.pubname='supabase_realtime'`)).rows;
   assert.equal(publication.length, 1);
   publicationRestoreSql(publication[0]);
-  return { format: "postgres-custom", schemas, serverVersion, tables: counts, publication: publication[0] };
+  const roles = (await client.query(`select rolname as name,rolbypassrls as bypassrls from pg_roles
+    where rolname not like 'pg_%' and rolname<>'postgres' order by rolname`)).rows;
+  assert.ok(roles.length < 100 && roles.every(role => /^[a-z][a-z0-9_]{0,62}$/.test(role.name) && typeof role.bypassrls === "boolean"));
+  return { format: "postgres-custom", schemas, serverVersion, tables: counts, roles, publication: publication[0], fingerprints: await tableFingerprints(client) };
+}
+
+export async function tableFingerprints(client) {
+  const names = (await client.query("select schemaname,tablename from pg_tables where schemaname=any($1) order by 1,2", [schemas])).rows;
+  const quote = value => `"${value.replaceAll('"', '""')}"`;
+  const result = {};
+  for (const row of names) {
+    result[`${row.schemaname}.${row.tablename}`] = (await client.query(`select count(*)::text as count,
+      md5(coalesce(string_agg(to_jsonb(t)::text,E'\\n' order by to_jsonb(t)::text),'')) as fingerprint
+      from ${quote(row.schemaname)}.${quote(row.tablename)} t`)).rows[0];
+  }
+  return result;
 }
 
 export function publicationRestoreSql(value) {
@@ -76,6 +92,10 @@ export function publicationRestoreSql(value) {
 export async function dumpDatabase(env, output) {
   const { client, pgEnv } = await connect(env);
   try {
+    if (env.OPS_DATA_SCOPE === "synthetic-only") {
+      await importSnapshot(client, env.OPS_EXPORTED_SNAPSHOT);
+      await assertSyntheticSource(client);
+    }
     const server = Number((await client.query("show server_version_num")).rows[0].server_version_num);
     const base = controlledEnvironment(env);
     for (const key of Object.keys(base)) if (/^(OPS_|AWS_|RESTIC_)/.test(key)) delete base[key];

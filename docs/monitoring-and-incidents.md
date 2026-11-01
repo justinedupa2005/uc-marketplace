@@ -12,6 +12,59 @@ Do not reuse or modify production Supabase SMTP for operational alerts. The
 existing optional webhook sends only to a separately approved endpoint; it does
 not send mail merely because `alertEmail` is configured.
 
+On 2026-11-01 the owner authorized implementation and alert testing and selected
+**Brevo** for operational alerts and confirmed the verified sender as
+`ucmarketplace.security@gmail.com`, also the approved recipient. The dedicated
+API key still needs confirmation; no delivery test has run. `monitoringApproved` is
+recorded; `monitoringEnabled`, external notifications and the repository schedule
+gates remain disabled. No provider account, paid subscription, SMTP change or
+production deployment was inferred from that approval.
+
+The protected backup workflow now offers manual `monitor` and `alert-test`
+operations and a guarded 15-minute monitoring trigger. Configure operator-only
+`OPS_MANAGEMENT_TOKEN` (staging-scoped read permissions), `OPS_VERCEL_TOKEN`
+(least-privilege monitoring access) and, after provider selection,
+`OPS_BREVO_API_KEY` in `staging-operations` (`OPS_ALERT_WEBHOOK_URL` is only for a
+separately approved generic webhook alternative). Never copy a broad personal
+management credential into CI merely because it works locally. The pinned
+Vercel 50.14.0 operator CLI installs before secrets and receives only its own
+credential, not database, Storage or repository secrets. Missing telemetry fails
+visibly rather than passing as healthy.
+
+### Selected Brevo transport
+
+Set `alertSenderEmail` to the owner's approved, verified Brevo sender and confirm
+`alertSenderVerified` only after verification. Store a dedicated **API key**, not
+an SMTP key, as `OPS_BREVO_API_KEY` in `staging-operations`. Restrict it to the
+transactional-email permissions needed for sending where the account supports
+this. Do not reuse production Supabase's SMTP settings or regenerate its keys.
+The API origin/path is pinned to `https://api.brevo.com/v3/smtp/email`; code accepts
+no alternate URL and never follows redirects or retries a send. The payload has
+only the approved sender/recipient, a fixed staging subject, time and allowlisted
+operational codes. No identities, messages, tokens or ID images are sent.
+[Brevo transactional API](https://developers.brevo.com/docs/send-a-transactional-email)
+and [API key permissions](https://help.brevo.com/hc/en-us/articles/40158277171474-About-API-key-permissions).
+
+Dispatch `alert-test` through the staging QA launcher's `staging_operation` after
+the exact staging commit passes CI. The dedicated reviewed `alert-delivery` job
+receives **only** the Brevo credential: no database, Storage, backup-vault,
+Supabase management or Vercel secrets are released to it. This operation is
+independent of the disabled monitoring/daily-backup schedule flags. It sends at
+most one synthetic message to `ucmarketplace.security@gmail.com`. HTTP 201 proves
+acceptance, not inbox arrival; record the recipient's inbox/spam confirmation.
+On an ambiguous timeout inspect Brevo privately before authorizing another test.
+
+`npm.cmd run ops:alerts:test` sends at most one fixed synthetic test event to the
+exact approved HTTPS origin, requires `OPS_ALERTS_ENABLED=1` and
+`OPS_ALERT_TEST_CONFIRM=ucmarketplace.security@gmail.com`, follows no redirects
+and never retries automatically. A successful HTTP response means **provider
+acceptance**, not inbox delivery; the recipient must confirm delivery. No test
+request is sent while the selected transport is unconfigured. Review cooldown,
+deduplication, acknowledgement and recovery notification in the selected service
+before enabling `STAGING_ALERTS_ENABLED` and `STAGING_MONITORING_ENABLED`.
+The required reviewer checkpoint applies to monitoring schedules as well;
+there is no automatic self-approval or promise of unattended monitoring.
+
 ## Signals and safe collection
 
 `npm.cmd run ops:monitor` reads only registered staging. Supply operator-only
@@ -71,8 +124,9 @@ retention and features. No paid monitoring add-on was enabled.
 
 ## Activate monitoring and alert delivery
 
-1. Assign a primary incident responder and deputy, an approved notification
-   channel and a reliable runner. Do not rely on a developer laptop staying on.
+1. Use the recorded sole incident responder and document the no-deputy coverage
+   risk. Approve a notification channel and a reliable runner. Do not rely on a
+   developer laptop staying on.
 2. Deploy the reviewed logging changes to staging through normal protected CI
    after explicit deployment approval; retain staging access controls.
 3. Schedule the monitor every 15 minutes on the approved secure operator runner.
@@ -101,10 +155,17 @@ sent no alerts. This is a successful probe, not continuous monitoring sign-off.
 
 ## Incident ownership and communication
 
-Until a deputy is appointed, the project owner is the escalation contact; this
-must be confirmed before launch. The on-call responder investigates, the incident
-commander approves state-changing recovery, and the privacy/security owner
-approves handling of identity documents and affected-user communications.
+The confirmed sole owner and incident responder is `justinedupa2005`; no deputy
+is assigned because this is a solo-maintained project. This is not a technical
+blocker, but unavailable or locked-out owner access can delay recovery. Keep
+repository-password custody and account recovery material separately protected;
+review a trusted emergency contact when practical. The backup policy approval
+does not activate monitoring, notifications or incident recovery actions.
+
+The on-call responder investigates, the incident commander approves state-changing
+recovery, and the privacy/security owner approves handling of identity documents
+and affected-user communications. These responsibilities are currently held by
+the same sole maintainer; they are not additional application/database roles.
 No action is automatically authorized merely because it appears in a runbook.
 
 Open a private incident record with a UTC timeline (also record local PHT),
@@ -122,7 +183,8 @@ passwords, full tokens, private chats or raw credential-bearing logs.
 | Suspicious accounts/traffic | Aggregate patterns then narrowly authorized account/audit review | Use existing moderation controls for confirmed accounts, preserve evidence and review session/key compromise; no bulk suspension without approval |
 | Failed deployment | Exact source/CI, build/runtime, environment, migrations and previous artifact | Block promotion; review rollback compatibility before changing aliases/artifacts; never restore an older database over newer data automatically |
 
-For a critical incident, acknowledge promptly, assign commander/deputy and state
+For a critical incident, acknowledge promptly, identify the responsible commander
+and any available backup contact (currently none is assigned), and state
 the next update time; initial operating targets are 15-minute acknowledgement
 and 30-minute status updates while active, subject to confirmed staffing. Use
 the approved support/status channel for a minimal service-impact update. The

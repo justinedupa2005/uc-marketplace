@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { Readable } from "node:stream";
 import { readFile } from "node:fs/promises";
 import { persistentSyntheticWorkflow } from "../scripts/operations/drill-fixtures.mjs";
-import { validateTarget, validateBackupPolicy, validateObject, expiredSnapshots, backupFreshness, registry, policy } from "../scripts/operations/policy.mjs";
+import { validateTarget, validateBackupPolicy, validateObject, expiredSnapshots, backupFreshness, registry, policy, syntheticSourceSql, assertSyntheticSource } from "../scripts/operations/policy.mjs";
 import { controlledEnvironment, command } from "../scripts/operations/process.mjs";
 import { storagePack, decodeStoragePack, boundedBody, validateBuckets } from "../scripts/operations/storage.mjs";
 import { resticClient } from "../scripts/operations/restic.mjs";
@@ -12,7 +12,7 @@ import { validateExportedSnapshot, publicationRestoreSql } from "../scripts/oper
 import { validateServiceKey, capture } from "../scripts/operations/backup.mjs";
 
 const id = "11111111-1111-4111-8111-111111111111", ref = registry.staging.supabaseProjectRef;
-const sha = "a".repeat(64), env = { OPS_ENV: "staging", OPS_PROJECT_REF: ref };
+const sha = "a".repeat(64), env = { OPS_ENV: "staging", OPS_PROJECT_REF: ref, OPS_DATA_SCOPE: "synthetic-only" };
 const selected = { ...policy.staging, enabled: true, owner: "Approved backup owner", retentionApproved: true,
   repository: "s3:https://backups.example.test/private/ucm-staging", repositoryId: sha };
 const configured = { ...env, RESTIC_REPOSITORY: selected.repository, RESTIC_PASSWORD: "Synthetic-repository-password-for-unit-tests-only" };
@@ -32,9 +32,60 @@ test("operations reject production, wrong project refs and implicit targets", ()
   for (const value of [{}, { ...env, OPS_ENV: "production" }, { ...env, OPS_PROJECT_REF: registry.production.supabaseProjectRef }]) assert.throws(() => validateTarget(value));
   assert.equal(policy.production.enabled, false); assert.equal(policy.staging.enabled, false);
 });
+
+test("approved manual synthetic capture does not activate scheduling, real-data retention, monitoring or deletion", () => {
+  assert.equal(policy.staging.owner, "Justine T. Dupa");
+  assert.equal(policy.staging.deputy, null);
+  assert.equal(policy.staging.ownershipModel, "solo-maintainer");
+  assert.deepEqual(policy.staging.syntheticPolicyApproval, {
+    approved: true, environment: "staging", dataScope: "synthetic-only", dailyAt: "02:17", timezone: "Asia/Manila",
+    retentionDays: 7, activationApproved: true, sourceAttestedSyntheticOnly: true, deletionApproved: false,
+  });
+  assert.equal(policy.staging.backupIntervalHours, 24);
+  assert.equal(policy.staging.retentionDays, 7);
+  assert.equal(policy.staging.verificationRetentionDays, 7);
+  assert.equal(policy.staging.retentionApproved, true);
+  assert.equal(policy.staging.manualBackupEnabled, true);
+  assert.equal(policy.staging.monitoringEnabled, false);
+  assert.equal(policy.production.monitoringEnabled, false);
+  assert.match(policy.staging.repository, /^s3:https:\/\/s3\.[a-z0-9-]+\.backblazeb2\.com\/[A-Za-z0-9/_-]+$/);
+  assert.ok(policy.staging.repository.endsWith("/ucmarketplace/staging-synthetic/repository-v1"));
+  assert.doesNotMatch(policy.staging.repository, /ucm-synthetic-tests/);
+  assert.match(policy.staging.repositoryId, /^[a-f0-9]{64}$/);
+  assert.doesNotThrow(() => validateBackupPolicy({ ...configured, RESTIC_REPOSITORY: policy.staging.repository },
+    { ...selected, repository: policy.staging.repository, repositoryId: policy.staging.repositoryId }));
+  assert.throws(() => validateBackupPolicy(configured, { ...selected, enabled: false, manualBackupEnabled: false }), /Backup activation requires reviewed policy/);
+  assert.throws(() => validateBackupPolicy(configured, { ...selected, dataScope: undefined, retentionApproved: policy.staging.retentionApproved }),
+    /Only synthetic staging data is approved/);
+  assert.throws(() => validateBackupPolicy(configured, { ...selected, dataScope: "real-data", retentionApproved: true }),
+    /Only synthetic staging data is approved/);
+  assert.throws(() => validateBackupPolicy({ ...configured, OPS_DATA_SCOPE: undefined }, selected), /Explicit synthetic-only capture scope required/);
+  assert.throws(() => validateBackupPolicy(configured, { ...selected, syntheticPolicyApproval: { ...selected.syntheticPolicyApproval, sourceAttestedSyntheticOnly: false } }));
+});
+
+test("operations plan reports scoped approval without claiming activation or an operational backup", async () => {
+  const report = JSON.parse((await command(process.execPath, ["scripts/operations/backup.mjs", "plan"])).toString());
+  assert.equal(report.ownerConfigured, true);
+  assert.equal(report.repositoryUrlConfigured, true);
+  assert.equal(report.repositoryIdConfigured, true);
+  assert.equal(report.repositoryConfigured, true);
+  assert.equal(report.deputyConfigured, false);
+  assert.equal(report.syntheticPolicyApproved, true);
+  assert.equal(report.approvedDataScope, "synthetic-only");
+  assert.equal(report.approvedDailyTime, "02:17");
+  assert.equal(report.approvedScheduleTimezone, "Asia/Manila");
+  assert.equal(report.approvedSyntheticRetentionDays, 7);
+  assert.equal(report.manualBackupEnabled, true);
+  assert.equal(report.activationApproved, true);
+  assert.equal(report.retentionApproved, true);
+  for (const field of ["backupEnabled", "monitoringEnabled", "deletionApproved", "productionEnabled", "credentialsPrinted"]) {
+    assert.equal(report[field], false);
+  }
+});
+
 test("private backup capture requires an approved owner, retention, exact encrypted repository and persistent key", () => {
   assert.deepEqual(validateBackupPolicy(configured, selected), selected);
-  for (const changes of [{ enabled: false }, { owner: null }, { retentionApproved: false }, { repositoryId: null }, { retentionDays: 0 },
+  for (const changes of [{ enabled: false, manualBackupEnabled: false }, { owner: null }, { syntheticPolicyApproval: { ...selected.syntheticPolicyApproval, approved: false } }, { repositoryId: null }, { retentionDays: 0 },
     { verificationRetentionDays: 8 }, { verificationRetentionDays: 1 }, { repository: "s3:http://example.test/private" }, { repository: "rest:https://user:password@example.test/private" }]) {
     assert.throws(() => validateBackupPolicy(configured, { ...selected, ...changes }));
   }
@@ -114,6 +165,25 @@ test("restic uses a failing-producer-aware encrypted stream, no plaintext files 
   const failed = resticClient({}, async () => { throw new Error("private diagnostic"); });
   await assert.rejects(failed.backup("database", id, ["node"]));
 });
+test("permanent vault verification accepts only the pinned repository ID and format version 2", async () => {
+  for (const [actualId, format, accepted] of [
+    [policy.staging.repositoryId, 2, true], [sha, 2, false],
+    [policy.staging.repositoryId, 1, false], [policy.staging.repositoryId, 3, false],
+  ]) {
+    const calls = [];
+    const storage = resticClient({}, async (_binary, args) => {
+      calls.push(args);
+      if (args.includes("version")) return Buffer.from("restic 0.19.1");
+      assert.deepEqual(args, ["--no-cache", "cat", "config"]);
+      return Buffer.from(JSON.stringify({ id: actualId, version: format }));
+    });
+    if (accepted) await storage.verify(policy.staging.repositoryId);
+    else await assert.rejects(storage.verify(policy.staging.repositoryId));
+    assert.equal(calls.length, 2);
+    assert.ok(calls.every(args => !args.includes("backup") && !args.includes("init") && !args.includes("forget")));
+  }
+});
+
 test("process wrapper fails on exit, caps private output and does not execute shell metacharacters", async () => {
   assert.equal((await command(process.execPath, ["-e", "process.stdout.write(process.argv[1])", "not-a-command; $private"])).toString(), "not-a-command; $private");
   await assert.rejects(command(process.execPath, ["-e", "process.exit(3)"]));
@@ -171,6 +241,7 @@ test("a failed component cannot create a completion marker, and its read-only sn
   tables.push({ schema: "auth", name: "users", rls: true });
   const client = { async query(query) {
     queries.push(query);
+    if (query === syntheticSourceSql) return { rows: [{ accounts: 5, unknown_accounts: 0, unknown_profiles: 0, unknown_object_owners: 0 }] };
     if (query.includes("pg_export_snapshot")) return { rows: [{ id: "00000003-000000A1-1" }] };
     if (query.includes("from storage.buckets")) return { rows: ["listing-images", "avatars", "student-verifications"].map(id => ({ id, public: id === "avatars" })) };
     if (query.includes("from storage.objects")) return { rows: [] };
@@ -190,6 +261,14 @@ test("a failed component cannot create a completion marker, and its read-only sn
     assert.ok(queries.includes("begin isolation level repeatable read read only"));
     assert.ok(queries.includes("rollback")); assert.equal(ended, true);
   } finally { Object.assign(policy.staging, original); }
+});
+
+test("synthetic backup preflight rejects even one unknown user, profile or Storage owner before dumping", async () => {
+  const valid = { accounts: 5, unknown_accounts: 0, unknown_profiles: 0, unknown_object_owners: 0 };
+  await assertSyntheticSource({ query: async sql => { assert.equal(sql, syntheticSourceSql); return { rows: [valid] }; } });
+  for (const changes of [{ accounts: 6 }, { accounts: 0 }, { unknown_accounts: 1 }, { unknown_profiles: 1 }, { unknown_object_owners: 1 }]) {
+    await assert.rejects(assertSyntheticSource({ query: async () => ({ rows: [{ ...valid, ...changes }] }) }));
+  }
 });
 
 test("schema-scoped backups preserve the database-global Realtime contract separately, without publishing private tables", () => {

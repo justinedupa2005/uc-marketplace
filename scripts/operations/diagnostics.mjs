@@ -22,6 +22,14 @@ const resticPatterns = [
 ];
 const resticCodes = new Set(resticPatterns.map(([, code]) => code));
 
+export function databaseFailureCode(error) {
+  // No username, host, URL, SQL, password, server response or Error message.
+  const codes = { "28P01": "DATABASE_AUTHENTICATION_REJECTED", "28000": "DATABASE_AUTHENTICATION_REJECTED", "42501": "DATABASE_PERMISSION_DENIED",
+    "53300": "DATABASE_CONNECTION_LIMIT", "57014": "DATABASE_QUERY_TIMEOUT", ENOTFOUND: "DATABASE_NETWORK_UNAVAILABLE", ECONNREFUSED: "DATABASE_NETWORK_UNAVAILABLE",
+    ECONNRESET: "DATABASE_NETWORK_UNAVAILABLE", ETIMEDOUT: "DATABASE_NETWORK_UNAVAILABLE" };
+  return Object.hasOwn(codes, error?.code) ? codes[error.code] : "DATABASE_PREFLIGHT_FAILED";
+}
+
 export function resticFailureCodes(privateDiagnostic) {
   // Return only fixed categories. Never return a matching fragment, provider
   // response, bucket/endpoint/key, command, Error, stack or signed URL.

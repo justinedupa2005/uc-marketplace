@@ -4,7 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { connect, databaseManifest, inventorySql, validateExportedSnapshot } from "./database.mjs";
-import { policy, registry, validateBackupPolicy, validateTarget, validateObject, expiredSnapshots } from "./policy.mjs";
+import { policy, registry, validateBackupPolicy, validateTarget, validateObject, expiredSnapshots, assertSyntheticSource } from "./policy.mjs";
 import { inventoryDigest, validateBuckets } from "./storage.mjs";
 import { resticClient } from "./restic.mjs";
 import { getStagingCa } from "../staging/tls.mjs";
@@ -37,6 +37,7 @@ export async function capture(env, adapters = {}) {
   try {
     await client.query("set idle_in_transaction_session_timeout='20min'");
     await client.query("begin isolation level repeatable read read only");
+    if (selected.dataScope === "synthetic-only") await assertSyntheticSource(client);
     const exported = validateExportedSnapshot((await client.query("select pg_export_snapshot() as id")).rows[0].id);
     validateBuckets((await client.query("select id,public from storage.buckets order by id")).rows);
     const objects = (await client.query(inventorySql)).rows;
@@ -56,9 +57,9 @@ export async function capture(env, adapters = {}) {
     try { assert.equal(inventoryDigest((await current.query(inventorySql)).rows), inventoryDigest(objects), "Storage changed; do not certify this capture."); }
     finally { await current.end(); }
     await storage.check();
-    const manifest = { version: 1, complete: true, projectRef: registry.staging.supabaseProjectRef, runId: id,
+    const manifest = { version: 1, complete: true, projectRef: registry.staging.supabaseProjectRef, runId: id, dataScope: selected.dataScope,
       startedAt, completedAt: new Date().toISOString(), inventorySha256: inventoryDigest(objects),
-      database, storage: { objects: objects.length, bytes }, snapshots,
+      database, storage: { objects: objects.length, bytes, inventory: objects }, snapshots,
       excludes: ["managed-role-passwords", "auth-provider-settings-and-api-keys", "smtp-credentials", "root-encryption-key", "edge-functions", "off-site-repository-key"] };
     snapshots.bundle = await worker({ ...workerEnv, OPS_BUNDLE_MANIFEST: JSON.stringify(manifest) }).backup("bundle", id, producer("bundle"));
     await client.query("rollback");
@@ -74,8 +75,16 @@ async function main() {
   assert.equal(process.argv.length, 3);
   if (operation === "plan") {
     const selected = policy.staging;
-    console.log(JSON.stringify({ environment: "staging", backupEnabled: selected.enabled, monitoringEnabled: selected.monitoringEnabled,
+    console.log(JSON.stringify({ environment: "staging", backupEnabled: selected.enabled, manualBackupEnabled: selected.manualBackupEnabled === true, monitoringEnabled: selected.monitoringEnabled,
       repositoryConfigured: Boolean(selected.repository && selected.repositoryId), ownerConfigured: Boolean(selected.owner),
+      repositoryUrlConfigured: Boolean(selected.repository), repositoryIdConfigured: Boolean(selected.repositoryId),
+      deputyConfigured: Boolean(selected.deputy), syntheticPolicyApproved: selected.syntheticPolicyApproval?.approved === true,
+      approvedDataScope: selected.syntheticPolicyApproval?.dataScope ?? null,
+      approvedDailyTime: selected.syntheticPolicyApproval?.dailyAt ?? null,
+      approvedScheduleTimezone: selected.syntheticPolicyApproval?.timezone ?? null,
+      approvedSyntheticRetentionDays: selected.syntheticPolicyApproval?.retentionDays ?? null,
+      activationApproved: selected.syntheticPolicyApproval?.activationApproved === true,
+      deletionApproved: selected.syntheticPolicyApproval?.deletionApproved === true,
       retentionApproved: selected.retentionApproved, proposedRetentionDays: selected.retentionDays,
       proposedVerificationRetentionDays: selected.verificationRetentionDays, backupIntervalHours: selected.backupIntervalHours,
       productionEnabled: false, credentialsPrinted: false })); return;
@@ -95,7 +104,10 @@ async function main() {
     // restic prune needs separate deletion credentials and explicit approval.
     const ids = expiredSnapshots(snapshots, Date.now(), selected.retentionDays);
     const apply = operation === "retention-apply";
-    if (apply) assert.equal(env.OPS_PRUNE_CONFIRM, `${registry.staging.supabaseProjectRef}:prune:${new Date().toISOString().slice(0, 10)}`);
+    if (apply) {
+      assert.equal(selected.syntheticPolicyApproval?.deletionApproved, true, "Retention deletion needs separate approval.");
+      assert.equal(env.OPS_PRUNE_CONFIRM, `${registry.staging.supabaseProjectRef}:prune:${new Date().toISOString().slice(0, 10)}`);
+    }
     if (ids.length) await storage.forget(ids, apply);
     if (apply) await storage.check();
     console.log(JSON.stringify({ expiredSnapshots: ids.length, deleted: apply, unrelatedSnapshotsTargeted: false }));

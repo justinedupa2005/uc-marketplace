@@ -60,13 +60,27 @@ An automated pass does not enable production or complete those manual checks.
 Step 9 adds [encrypted database and separate file backups](docs/backup-and-recovery.md),
 isolated restoration drills, and [monitoring/incident runbooks](docs/monitoring-and-incidents.md).
 Backblaze B2 is the selected destination; incident alerts are intended for
-`ucmarketplace.security@gmail.com`. Schedules and notifications remain disabled
-pending verified destination, retention, key custody and delivery setup. Native
-synthetic restoration passed **129** security assertions and recovered **6**
-files; read-only staging monitoring also worked. The first synthetic-only B2
-drill failed; an off-site passing receipt is still required. These do not
-constitute operational backup or
-production-release sign-off.
+`ucmarketplace.security@gmail.com`. Sole owner `justinedupa2005` approved daily
+02:17 Asia/Manila backups with seven-day retention for **synthetic staging data
+only**; no deputy is assigned. The owner subsequently authorized a manual
+synthetic staging capture/restore and attested that staging contains only test
+data. Real-data capture and retention deletion remain unauthorized. Schedules and notifications remain
+disabled pending operator credentials, independent vault verification, activation
+and delivery setup. The permanent staging repository URL and ID are recorded;
+the owner reports successful initialization and integrity checks with format 2.
+`ops:verify` checks private destination/source access; `ops:cycle` captures the
+complete staging bundle and restores that exact vault backup in a new isolated
+container before writing encrypted restore evidence. Manual runs are independent
+of scheduling; protected jobs require the sole owner's explicit review. Cron
+triggers are not an unattended service while that review is required. The
+monitoring/alert-test workflow is prepared; Brevo is selected, with verified
+sender confirmed; dedicated API credential and delivery confirmation still pending.
+Native synthetic restoration passed **129** security assertions and recovered **6**
+files; read-only staging monitoring also worked. The latest
+[synthetic-only B2 drill](https://github.com/justinedupa2005/uc-marketplace/actions/runs/40888196486)
+passed: three generated images restored, private bucket/integrity checks,
+wrong-password denial and failed-producer rejection. These do not constitute
+operational backup or production-release sign-off.
 
 The app uses the existing `NEXT_PUBLIC_APP_URL` and
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` names; do not add URL/key aliases.
