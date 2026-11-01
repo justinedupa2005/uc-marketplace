@@ -159,3 +159,25 @@ test("transitive fix propagation cannot cause a false CI failure while changed p
     }
   }
 });
+
+test("arbitrary old-major recommendations cannot make CI flaky, but compatible/newer remedies still invalidate the deferral", () => {
+  for (const [name, versions] of [["eslint", ["4.0.0", "8.57.1"]], ["eslint-config-next", ["0.2.4", "12.0.4", "14.2.35"]]]) {
+    for (const version of versions) {
+      const f = minimatchFixture(); f.full.vulnerabilities[name].fixAvailable = { name, version, isSemVerMajor: true };
+      assert.equal(reviewMinimatch(f).deferredDevelopmentPackages, 16);
+    }
+  }
+  for (const [name, version] of [["eslint", "9.39.5"], ["eslint", "9.39.6"], ["eslint", "10.14.0"],
+    ["eslint-config-next", "16.4.3"], ["eslint-config-next", "16.4.4"], ["eslint-config-next", "17.0.0"]]) {
+    for (const isSemVerMajor of [true, false]) {
+      const f = minimatchFixture(); f.full.vulnerabilities[name].fixAvailable = { name, version, isSemVerMajor };
+      assert.throws(() => reviewMinimatch(f));
+    }
+  }
+  for (const proposal of [{ name: "eslint", version: "4.0.0", isSemVerMajor: false },
+    { name: "eslint", version: "not-semver", isSemVerMajor: true },
+    { name: "eslint-config-next", version: "0.2.4", isSemVerMajor: true }]) {
+    const f = minimatchFixture(); f.full.vulnerabilities.eslint.fixAvailable = proposal;
+    assert.throws(() => reviewMinimatch(f));
+  }
+});

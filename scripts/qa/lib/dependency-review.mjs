@@ -106,21 +106,24 @@ function reviewMinimatch(full, lock, policy, now) {
       return item.url;
     });
     if (!isDeepStrictEqual(via.sort(), [...approved.via].sort())) throw failure("MINIMATCH_EDGES_CHANGED");
-    const fixes = {
-      "eslint-downgrade": { name: "eslint", version: "4.0.0", isSemVerMajor: true },
-      "next-config-downgrade": { name: "eslint-config-next", version: "0.2.4", isSemVerMajor: true },
-    };
     // Arborist propagates fixAvailable through transitive via/effects cycles;
     // traversal/cache order changes those suggestions without changing risk.
-    // Bind the two actual project-level fixes, not unstable indirect display
+    // Bind the two actual project-level remedy classes, not indirect display
     // metadata. All 16 packages' paths, versions, edges and advisory stay bound.
     const direct = name === "eslint" || name === "eslint-config-next";
     if (value.isDirect !== direct) throw failure("MINIMATCH_DIRECT_DEPENDENCY_CHANGED");
     if (!direct) continue;
-    const fix = fixes[approved.fix];
-    if (!fix || !isDeepStrictEqual(value.fixAvailable, fix)) throw Object.assign(failure("MINIMATCH_FIX_CHANGED"), {
-        reviewPackage: name, reviewFix: value.fixAvailable, reviewFixClass: value.fixAvailable === true ? "IN_RANGE_UPDATE" : isDeepStrictEqual(value.fixAvailable, fixes["eslint-downgrade"])
-          ? "ESLINT_DOWNGRADE" : isDeepStrictEqual(value.fixAvailable, fixes["next-config-downgrade"]) ? "NEXT_CONFIG_DOWNGRADE" : "UNREVIEWED_FIX" });
+    const fix = value.fixAvailable;
+    const offered = typeof fix?.version === "string" && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(fix.version);
+    const installedMajor = Number(approved.nodes[`node_modules/${name}`].split(".")[0]);
+    const expectedClass = name === "eslint" ? "eslint-downgrade" : "next-config-downgrade";
+    // npm may pick 0.2.4, 12.0.4, etc. for the same Next-config finding. The
+    // meaningful assessment is an incompatible *older major*, not which old
+    // release an unordered calculation picks. Never accept an in-range fix,
+    // same/newer major, changed remedy package, missing evidence or weak flag.
+    const olderMajor = offered && fix.name === name && fix.isSemVerMajor === true && Number(offered[1]) < installedMajor;
+    if (approved.fix !== expectedClass || !olderMajor) throw Object.assign(failure("MINIMATCH_FIX_CHANGED"), {
+      reviewPackage: name, reviewFix: fix, reviewFixClass: fix === true ? "IN_RANGE_UPDATE" : "UNREVIEWED_FIX" });
   }
   return { status: "passed_with_reviewed_development_risk", productionFindings: 0, deferredDevelopmentPackages: full.size,
     advisory: policy.advisory, approvedBy: policy.approvedBy, expiresOn: policy.expiresOn, expiresAt: new Date(expiry).toISOString(), timezone: policy.timezone };
