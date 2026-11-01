@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { reviewDependencyAudits } from "../scripts/qa/lib/dependency-review.mjs";
+import { reviewDependencyAudits, dependencyFailureCode } from "../scripts/qa/lib/dependency-review.mjs";
 
 const policy = JSON.parse(readFileSync(new URL("../scripts/qa/dependency-policy.json", import.meta.url), "utf8"));
 const now = new Date("2026-10-20T12:00:00Z");
@@ -128,4 +128,12 @@ test("the seven-day exception cannot authorize production risk, new advisories, 
   for (const full of [{}, { ...report(), error: { code: "NETWORK" } }, { ...report(), vulnerabilities: [] }]) {
     const f = minimatchFixture(); f.full = full; assert.throws(() => reviewMinimatch(f));
   }
+});
+
+test("dependency diagnostics expose only fixed review codes, never raw npm errors", () => {
+  assert.equal(dependencyFailureCode(new Error("private registry diagnostic")), "AUDIT_COMMAND_OR_NETWORK_FAILED");
+  assert.equal(dependencyFailureCode({ reviewCode: "untrusted secret-like input" }), "AUDIT_COMMAND_OR_NETWORK_FAILED");
+  const f = minimatchFixture(); f.full.vulnerabilities.minimatch.fixAvailable = true;
+  try { reviewMinimatch(f); assert.fail("Must refuse changed audit evidence"); }
+  catch (error) { assert.equal(dependencyFailureCode(error), "MINIMATCH_FIX_CHANGED"); }
 });

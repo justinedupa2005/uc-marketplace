@@ -1,7 +1,10 @@
 import { isDeepStrictEqual } from "node:util";
 
 const severities = ["info", "low", "moderate", "high", "critical"];
-const failure = () => new Error("Dependency review failed: unreviewed, expired, production, or invalid audit evidence. No raw diagnostics were printed.");
+const reviewCodes = new Set(["AUDIT_EVIDENCE_INVALID", "PRODUCTION_FINDINGS", "MINIMATCH_APPROVAL_INVALID_OR_EXPIRED", "MINIMATCH_FINDINGS_CHANGED", "MINIMATCH_NODES_OR_SEVERITY_CHANGED", "MINIMATCH_INSTALL_CHANGED", "MINIMATCH_ADVISORY_CHANGED", "MINIMATCH_EDGES_CHANGED", "MINIMATCH_FIX_CHANGED"]);
+const failure = (code = "AUDIT_EVIDENCE_INVALID") => Object.assign(new Error("Dependency review failed: unreviewed, expired, production, or invalid audit evidence. No raw diagnostics were printed."), { reviewCode: reviewCodes.has(code) ? code : "AUDIT_EVIDENCE_INVALID" });
+
+export function dependencyFailureCode(error) { return reviewCodes.has(error?.reviewCode) ? error.reviewCode : "AUDIT_COMMAND_OR_NETWORK_FAILED"; }
 
 function vulnerabilities(report) {
   if (report?.auditReportVersion !== 2 || report.error || !report.vulnerabilities
@@ -21,7 +24,7 @@ function vulnerabilities(report) {
 /** Every production finding fails; development exceptions bind the entire exact chain. */
 export function reviewDependencyAudits(fullReport, productionReport, lock, policy, { now = new Date(), developmentPolicy } = {}) {
   const full = vulnerabilities(fullReport);
-  if (vulnerabilities(productionReport).size) throw failure();
+  if (vulnerabilities(productionReport).size) throw failure("PRODUCTION_FINDINGS");
   if (!full.size) return { status: "passed", productionFindings: 0, deferredDevelopmentPackages: 0 };
   if (developmentPolicy !== undefined) return reviewMinimatch(full, lock, developmentPolicy, now);
   const reviewed = Date.parse(`${policy?.reviewedOn}T00:00:00.000Z`);
@@ -72,32 +75,32 @@ function reviewMinimatch(full, lock, policy, now) {
   if (policy?.version !== 1 || policy.approved !== true || policy.approvedBy !== "justinedupa2005" || policy.scope !== "development-only"
     || policy.reviewedOn !== "2026-11-01" || policy.expiresOn !== "2026-11-08" || policy.timezone !== "Asia/Manila"
     || !Number.isFinite(now.getTime()) || now.getTime() < reviewed || now.getTime() >= expiry || expiry - reviewed !== 7 * 86400000
-    || policy.advisory !== "https://github.com/advisories/GHSA-g3hv-75wg-m249" || policy.severity !== "moderate" || !policy.reason || !policy.mitigation
-    || full.size !== expected.length || !isDeepStrictEqual(Object.keys(policy.packages ?? {}).sort(), [...expected].sort())) throw failure();
+    || policy.advisory !== "https://github.com/advisories/GHSA-g3hv-75wg-m249" || policy.severity !== "moderate" || !policy.reason || !policy.mitigation) throw failure("MINIMATCH_APPROVAL_INVALID_OR_EXPIRED");
+  if (full.size !== expected.length || !isDeepStrictEqual(Object.keys(policy.packages ?? {}).sort(), [...expected].sort())) throw failure("MINIMATCH_FINDINGS_CHANGED");
   for (const name of expected) {
     const value = full.get(name), approved = policy.packages[name];
     if (!value || value.severity !== "moderate" || !approved?.nodes || !Array.isArray(approved.via)
-      || !isDeepStrictEqual([...value.nodes].sort(), Object.keys(approved.nodes).sort())) throw failure();
+      || !isDeepStrictEqual([...value.nodes].sort(), Object.keys(approved.nodes).sort())) throw failure("MINIMATCH_NODES_OR_SEVERITY_CHANGED");
     for (const node of value.nodes) {
       const installed = lock?.packages?.[node];
-      if (installed?.dev !== true || installed.version !== approved.nodes[node]) throw failure();
+      if (installed?.dev !== true || installed.version !== approved.nodes[node]) throw failure("MINIMATCH_INSTALL_CHANGED");
     }
     const via = value.via.map(item => {
       if (typeof item === "string") {
-        if (!expected.includes(item)) throw failure();
+        if (!expected.includes(item)) throw failure("MINIMATCH_ADVISORY_CHANGED");
         return item;
       }
       if (name !== "minimatch" || item?.name !== "minimatch" || item.url !== policy.advisory
-        || item.severity !== "moderate" || item.range !== "<11.0.1") throw failure();
+        || item.severity !== "moderate" || item.range !== "<11.0.1") throw failure("MINIMATCH_ADVISORY_CHANGED");
       return item.url;
     });
-    if (!isDeepStrictEqual(via.sort(), [...approved.via].sort())) throw failure();
+    if (!isDeepStrictEqual(via.sort(), [...approved.via].sort())) throw failure("MINIMATCH_EDGES_CHANGED");
     const fixes = {
       "eslint-downgrade": { name: "eslint", version: "4.0.0", isSemVerMajor: true },
       "next-config-downgrade": { name: "eslint-config-next", version: "0.2.4", isSemVerMajor: true },
     };
     const fix = approved.fix === true ? true : fixes[approved.fix];
-    if (fix === undefined || !isDeepStrictEqual(value.fixAvailable, fix)) throw failure();
+    if (fix === undefined || !isDeepStrictEqual(value.fixAvailable, fix)) throw failure("MINIMATCH_FIX_CHANGED");
   }
   return { status: "passed_with_reviewed_development_risk", productionFindings: 0, deferredDevelopmentPackages: full.size,
     advisory: policy.advisory, approvedBy: policy.approvedBy, expiresOn: policy.expiresOn, expiresAt: new Date(expiry).toISOString(), timezone: policy.timezone };
