@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { reviewDependencyAudits, dependencyFailureCode } from "./lib/dependency-review.mjs";
+import { reviewDependencyAudits, dependencyFailureCode, dependencyFailureDetails } from "./lib/dependency-review.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 function audit(args) {
@@ -28,5 +28,6 @@ try {
   console.log(`DEPENDENCY_REVIEW_JSON:${JSON.stringify(reviewDependencyAudits(full, production, lock, policy, { developmentPolicy }))}`);
 } catch (error) {
   console.error(`Dependency security gate failed: ${dependencyFailureCode(error)}. Review current audits and the expiring development policy; private npm diagnostics were withheld.`);
+  console.error(`DEPENDENCY_FAILURE_JSON:${JSON.stringify(dependencyFailureDetails(error))}`);
   process.exitCode = 1;
 }

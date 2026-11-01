@@ -8,7 +8,7 @@ import { connect } from "./database.mjs";
 import { backblazeConfiguration, verifyBackblaze } from "./backblaze.mjs";
 import { resticClient } from "./restic.mjs";
 import { validateBuckets } from "./storage.mjs";
-import { backblazeFailure } from "./diagnostics.mjs";
+import { backblazeFailure, databaseFailureCode } from "./diagnostics.mjs";
 
 export async function verifyOperations(env) {
   let phase = "preflight-policy";
@@ -47,6 +47,7 @@ export async function verifyOperations(env) {
       const diagnostic = backblazeFailure(error, "b2-preflight");
       error.operationCodes = [diagnostic.failureCode, ...diagnostic.operationCodes];
     }
+    if (phase === "preflight-database") error.operationCodes = [databaseFailureCode(error)];
     throw error;
   }
 }

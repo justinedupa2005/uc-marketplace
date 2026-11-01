@@ -6,6 +6,7 @@ import { validateBundle, validateRestoreEvidence, readJsonSnapshot } from "../sc
 import { verifyScheduledReadiness } from "../scripts/operations/cycle.mjs";
 import { testAlert } from "../scripts/operations/alert-test.mjs";
 import { sendBrevoAlert } from "../scripts/operations/brevo.mjs";
+import { databaseFailureCode } from "../scripts/operations/diagnostics.mjs";
 
 const run = "11111111-1111-4111-8111-111111111111", sha = "a".repeat(40);
 const ids = { database: "1".repeat(64), media: "2".repeat(64), verification: "3".repeat(64), bundle: "4".repeat(64) };
@@ -19,6 +20,14 @@ const proof = () => ({ version: 1, status: "passed", environment: "staging", dat
   cleanup: true, catalogAssertions: 129, restoredAccessChecks: 3, objectsRestored: 15, completedAt: new Date().toISOString(), productionTouched: false });
 const env = { OPS_ENV: "staging", OPS_PROJECT_REF: registry.staging.supabaseProjectRef, OPS_DATA_SCOPE: "synthetic-only",
   RESTIC_REPOSITORY: policy.staging.repository, RESTIC_PASSWORD: "Synthetic-test-only-repository-password-0123456789", OPS_SCHEDULED_CONFIRM: "staging-synthetic-only" };
+
+test("database preflight diagnostics distinguish refused authentication without exposing provider details", () => {
+  assert.equal(databaseFailureCode({ code: "28P01", message: "private provider detail" }), "DATABASE_AUTHENTICATION_REJECTED");
+  assert.equal(databaseFailureCode({ code: "42501" }), "DATABASE_PERMISSION_DENIED");
+  assert.equal(databaseFailureCode({ code: "ETIMEDOUT" }), "DATABASE_NETWORK_UNAVAILABLE");
+  assert.equal(databaseFailureCode({ code: "untrusted-code", message: "private" }), "DATABASE_PREFLIGHT_FAILED");
+  assert.equal(databaseFailureCode({ code: "constructor" }), "DATABASE_PREFLIGHT_FAILED");
+});
 
 test("restoration resolves the exact complete bundle and refuses mixed source, scope, run or component IDs", () => {
   assert.equal(validateBundle(manifest, ids.bundle, snapshots), manifest);

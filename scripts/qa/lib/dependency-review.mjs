@@ -1,10 +1,18 @@
 import { isDeepStrictEqual } from "node:util";
 
 const severities = ["info", "low", "moderate", "high", "critical"];
+const minimatchPackages = ["@eslint-community/eslint-utils", "@eslint/config-array", "@eslint/eslintrc", "@next/eslint-plugin-next",
+  "@typescript-eslint/eslint-plugin", "@typescript-eslint/parser", "@typescript-eslint/type-utils", "@typescript-eslint/typescript-estree",
+  "@typescript-eslint/utils", "eslint", "eslint-config-next", "eslint-plugin-import", "eslint-plugin-jsx-a11y", "eslint-plugin-react", "minimatch", "typescript-eslint"];
 const reviewCodes = new Set(["AUDIT_EVIDENCE_INVALID", "PRODUCTION_FINDINGS", "MINIMATCH_APPROVAL_INVALID_OR_EXPIRED", "MINIMATCH_FINDINGS_CHANGED", "MINIMATCH_NODES_OR_SEVERITY_CHANGED", "MINIMATCH_INSTALL_CHANGED", "MINIMATCH_ADVISORY_CHANGED", "MINIMATCH_EDGES_CHANGED", "MINIMATCH_FIX_CHANGED"]);
 const failure = (code = "AUDIT_EVIDENCE_INVALID") => Object.assign(new Error("Dependency review failed: unreviewed, expired, production, or invalid audit evidence. No raw diagnostics were printed."), { reviewCode: reviewCodes.has(code) ? code : "AUDIT_EVIDENCE_INVALID" });
 
 export function dependencyFailureCode(error) { return reviewCodes.has(error?.reviewCode) ? error.reviewCode : "AUDIT_COMMAND_OR_NETWORK_FAILED"; }
+export function dependencyFailureDetails(error) {
+  return { code: dependencyFailureCode(error),
+    ...(minimatchPackages.includes(error?.reviewPackage) ? { package: error.reviewPackage } : {}),
+    ...(["IN_RANGE_UPDATE", "ESLINT_DOWNGRADE", "NEXT_CONFIG_DOWNGRADE", "UNREVIEWED_FIX"].includes(error?.reviewFixClass) ? { fixClass: error.reviewFixClass } : {}) };
+}
 
 function vulnerabilities(report) {
   if (report?.auditReportVersion !== 2 || report.error || !report.vulnerabilities
@@ -68,9 +76,7 @@ function reviewMinimatch(full, lock, policy, now) {
   // This is the single owner-approved seven-day exception, not a general
   // severity threshold or a renewable allowlist. Historical braces logic above
   // remains separately testable; the current CLI selects only this policy.
-  const expected = ["@eslint-community/eslint-utils", "@eslint/config-array", "@eslint/eslintrc", "@next/eslint-plugin-next",
-    "@typescript-eslint/eslint-plugin", "@typescript-eslint/parser", "@typescript-eslint/type-utils", "@typescript-eslint/typescript-estree",
-    "@typescript-eslint/utils", "eslint", "eslint-config-next", "eslint-plugin-import", "eslint-plugin-jsx-a11y", "eslint-plugin-react", "minimatch", "typescript-eslint"];
+  const expected = minimatchPackages;
   const reviewed = Date.parse(`${policy?.reviewedOn}T00:00:00+08:00`), expiry = Date.parse(`${policy?.expiresOn}T00:00:00+08:00`);
   if (policy?.version !== 1 || policy.approved !== true || policy.approvedBy !== "justinedupa2005" || policy.scope !== "development-only"
     || policy.reviewedOn !== "2026-11-01" || policy.expiresOn !== "2026-11-08" || policy.timezone !== "Asia/Manila"
@@ -99,8 +105,15 @@ function reviewMinimatch(full, lock, policy, now) {
       "eslint-downgrade": { name: "eslint", version: "4.0.0", isSemVerMajor: true },
       "next-config-downgrade": { name: "eslint-config-next", version: "0.2.4", isSemVerMajor: true },
     };
-    const fix = approved.fix === true ? true : fixes[approved.fix];
-    if (fix === undefined || !isDeepStrictEqual(value.fixAvailable, fix)) throw failure("MINIMATCH_FIX_CHANGED");
+    // Arborist propagates top-level fixes through the advisory graph. Four
+    // indirect findings alternate between its default true and the rejected
+    // Next config downgrade depending on graph traversal. Bind these reviewed
+    // metadata variants, not arbitrary fixes/downgrades or changed libraries.
+    const proposals = Array.isArray(approved.fix) ? approved.fix : [approved.fix];
+    if (!proposals.length || proposals.length > 2 || proposals.some(item => item !== true && !Object.hasOwn(fixes, item))
+      || !proposals.some(item => isDeepStrictEqual(value.fixAvailable, item === true ? true : fixes[item]))) throw Object.assign(failure("MINIMATCH_FIX_CHANGED"), {
+        reviewPackage: name, reviewFixClass: value.fixAvailable === true ? "IN_RANGE_UPDATE" : isDeepStrictEqual(value.fixAvailable, fixes["eslint-downgrade"])
+          ? "ESLINT_DOWNGRADE" : isDeepStrictEqual(value.fixAvailable, fixes["next-config-downgrade"]) ? "NEXT_CONFIG_DOWNGRADE" : "UNREVIEWED_FIX" });
   }
   return { status: "passed_with_reviewed_development_risk", productionFindings: 0, deferredDevelopmentPackages: full.size,
     advisory: policy.advisory, approvedBy: policy.approvedBy, expiresOn: policy.expiresOn, expiresAt: new Date(expiry).toISOString(), timezone: policy.timezone };
