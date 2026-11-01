@@ -15,7 +15,7 @@ downgrades are not accepted fixes. No package or lockfile was changed.
 The owner explicitly approved a **seven-day, development-only exception** on
 November 1. `scripts/qa/dependency-policy-minimatch.json` binds the exact 16
 packages, 18 installed paths/versions, advisory edges, moderate severity, direct
-dependency classification and the two actual project-level fix proposals.
+dependency classification and the two actual project-level remedy classes.
 Repeated runs with npm 10.9.3 and CI's 10.9.9 exposed order-dependent fix metadata
 in indirect findings. PR #15 reproduced the same `@eslint-community/eslint-utils`
 finding with a Next-config downgrade suggestion instead of an ESLint downgrade;
@@ -24,10 +24,17 @@ its library version, paths, advisory and severity had not changed.
 The locally reviewed npm 10.9.9 source (`@npmcli/arborist/lib/vuln.js`, setter
 `fixAvailable`) propagates top-level fixes through transitive `via`/`effects`
 cycles. Per-indirect-package suggestions are therefore unstable display metadata,
-not new vulnerability evidence. The gate now compares exact fix proposals on
+not new vulnerability evidence. The gate now checks reviewed remedy classes on
 the two direct project dependencies, `eslint` and `eslint-config-next`, rather
-than enumerating every propagation variant on all 14 indirect findings. A changed
-project-level remedy still fails and requires review. Every indirect package's
+than enumerating every propagation variant on all 14 indirect findings. npm also
+alternates between obsolete direct-dependency versions: staging push CI
+41311886205 proposed Next config **12.0.4** instead of **0.2.4**, both incompatible
+older majors relative to installed **16.4.3**. The gate classifies these by the
+meaningful reviewed condition: the same direct package, a strict valid version
+in an **older major**, and `isSemVerMajor: true`. It never installs a downgrade.
+An in-range, same-major patch, newer-major upgrade, different remedy package,
+malformed/missing proposal or changed directness fails for review. The exact
+installed package versions remain pinned. Every indirect package's
 **advisory, severity, paths, installed versions and dependency edges** remains
 strictly bound. Regression tests simulate propagation changes across all 14
 indirect findings and reject changed direct remedies/classification. No new
