@@ -135,6 +135,7 @@ test("dependency diagnostics expose only fixed review codes, never raw npm error
   assert.equal(dependencyFailureCode(new Error("private registry diagnostic")), "AUDIT_COMMAND_OR_NETWORK_FAILED");
   assert.equal(dependencyFailureCode({ reviewCode: "untrusted secret-like input" }), "AUDIT_COMMAND_OR_NETWORK_FAILED");
   assert.deepEqual(dependencyFailureDetails({ reviewCode: "private", reviewPackage: "private", reviewFixClass: "private" }), { code: "AUDIT_COMMAND_OR_NETWORK_FAILED" });
+  assert.deepEqual(dependencyFailureDetails({ reviewFix: { name: "private", version: "private", isSemVerMajor: false } }), { code: "AUDIT_COMMAND_OR_NETWORK_FAILED" });
   const f = minimatchFixture(); f.full.vulnerabilities.minimatch.fixAvailable = true;
   try { reviewMinimatch(f); assert.fail("Must refuse changed audit evidence"); }
   catch (error) { assert.equal(dependencyFailureCode(error), "MINIMATCH_FIX_CHANGED"); }

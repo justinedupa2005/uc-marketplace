@@ -9,9 +9,14 @@ const failure = (code = "AUDIT_EVIDENCE_INVALID") => Object.assign(new Error("De
 
 export function dependencyFailureCode(error) { return reviewCodes.has(error?.reviewCode) ? error.reviewCode : "AUDIT_COMMAND_OR_NETWORK_FAILED"; }
 export function dependencyFailureDetails(error) {
+  const fix = error?.reviewFix;
+  const proposal = typeof fix === "boolean" ? fix : fix && minimatchPackages.includes(fix.name)
+    && /^\d{1,6}\.\d{1,6}\.\d{1,6}(?:-[A-Za-z0-9.-]{1,40})?$/.test(fix.version ?? "") && typeof fix.isSemVerMajor === "boolean"
+    ? { name: fix.name, version: fix.version, isSemVerMajor: fix.isSemVerMajor } : undefined;
   return { code: dependencyFailureCode(error),
     ...(minimatchPackages.includes(error?.reviewPackage) ? { package: error.reviewPackage } : {}),
-    ...(["IN_RANGE_UPDATE", "ESLINT_DOWNGRADE", "NEXT_CONFIG_DOWNGRADE", "UNREVIEWED_FIX"].includes(error?.reviewFixClass) ? { fixClass: error.reviewFixClass } : {}) };
+    ...(["IN_RANGE_UPDATE", "ESLINT_DOWNGRADE", "NEXT_CONFIG_DOWNGRADE", "UNREVIEWED_FIX"].includes(error?.reviewFixClass) ? { fixClass: error.reviewFixClass } : {}),
+    ...(proposal === undefined ? {} : { proposal }) };
 }
 
 function vulnerabilities(report) {
@@ -112,7 +117,7 @@ function reviewMinimatch(full, lock, policy, now) {
     const proposals = Array.isArray(approved.fix) ? approved.fix : [approved.fix];
     if (!proposals.length || proposals.length > 2 || proposals.some(item => item !== true && !Object.hasOwn(fixes, item))
       || !proposals.some(item => isDeepStrictEqual(value.fixAvailable, item === true ? true : fixes[item]))) throw Object.assign(failure("MINIMATCH_FIX_CHANGED"), {
-        reviewPackage: name, reviewFixClass: value.fixAvailable === true ? "IN_RANGE_UPDATE" : isDeepStrictEqual(value.fixAvailable, fixes["eslint-downgrade"])
+        reviewPackage: name, reviewFix: value.fixAvailable, reviewFixClass: value.fixAvailable === true ? "IN_RANGE_UPDATE" : isDeepStrictEqual(value.fixAvailable, fixes["eslint-downgrade"])
           ? "ESLINT_DOWNGRADE" : isDeepStrictEqual(value.fixAvailable, fixes["next-config-downgrade"]) ? "NEXT_CONFIG_DOWNGRADE" : "UNREVIEWED_FIX" });
   }
   return { status: "passed_with_reviewed_development_risk", productionFindings: 0, deferredDevelopmentPackages: full.size,

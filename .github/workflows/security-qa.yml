@@ -58,6 +58,8 @@ jobs:
         run: npm run qa:secrets -- --history
       - name: Install locked dependencies
         run: npm ci
+      - name: Audit production and review development advisories
+        run: npm run qa:dependencies
       - name: Generate route types and check TypeScript
         run: npm run typecheck
       - name: ESLint
@@ -66,8 +68,6 @@ jobs:
         run: npm test
       - name: Validate migrations and database authorization
         run: npm run test:db
-      - name: Audit production and review development advisories
-        run: npm run qa:dependencies
       - name: Production build
         run: npm run build
       - name: Check source boundaries and browser bundles
