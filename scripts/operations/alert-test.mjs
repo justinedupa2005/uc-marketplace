@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { policy, validateTarget } from "./policy.mjs";
+import { sendBrevoAlert } from "./brevo.mjs";
 
 export async function testAlert(env, fetcher = fetch) {
   validateTarget(env);
   assert.equal(policy.staging.monitoringApproved, true);
   assert.equal(env.OPS_ALERTS_ENABLED, "1");
   assert.equal(env.OPS_ALERT_TEST_CONFIRM, policy.staging.alertEmail, "Explicit approved test recipient required.");
+  if (policy.staging.alertProvider === "brevo") return sendBrevoAlert({ sampledAt: new Date().toISOString(), incidents: ["OPS_TEST_ALERT"] }, env, fetcher, true);
   assert.ok(policy.staging.alertWebhookOrigin, "An approved alert provider is not configured.");
   const url = new URL(env.OPS_ALERT_WEBHOOK_URL);
   assert.equal(url.protocol, "https:"); assert.equal(url.origin, policy.staging.alertWebhookOrigin);

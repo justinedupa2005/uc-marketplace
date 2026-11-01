@@ -12,8 +12,9 @@ Do not reuse or modify production Supabase SMTP for operational alerts. The
 existing optional webhook sends only to a separately approved endpoint; it does
 not send mail merely because `alertEmail` is configured.
 
-On 2026-11-01 the owner authorized implementation and alert testing but confirmed
-that **no operational alert provider is configured**. `monitoringApproved` is
+On 2026-11-01 the owner authorized implementation and alert testing and selected
+**Brevo** for operational alerts. Sender verification and a dedicated API key
+still need configuration; no delivery test has run. `monitoringApproved` is
 recorded; `monitoringEnabled`, external notifications and the repository schedule
 gates remain disabled. No provider account, paid subscription, SMTP change or
 production deployment was inferred from that approval.
@@ -22,18 +23,42 @@ The protected backup workflow now offers manual `monitor` and `alert-test`
 operations and a guarded 15-minute monitoring trigger. Configure operator-only
 `OPS_MANAGEMENT_TOKEN` (staging-scoped read permissions), `OPS_VERCEL_TOKEN`
 (least-privilege monitoring access) and, after provider selection,
-`OPS_ALERT_WEBHOOK_URL` in `staging-operations`. Never copy a broad personal
+`OPS_BREVO_API_KEY` in `staging-operations` (`OPS_ALERT_WEBHOOK_URL` is only for a
+separately approved generic webhook alternative). Never copy a broad personal
 management credential into CI merely because it works locally. The pinned
 Vercel 50.14.0 operator CLI installs before secrets and receives only its own
 credential, not database, Storage or repository secrets. Missing telemetry fails
 visibly rather than passing as healthy.
+
+### Selected Brevo transport
+
+Set `alertSenderEmail` to the owner's approved, verified Brevo sender and confirm
+`alertSenderVerified` only after verification. Store a dedicated **API key**, not
+an SMTP key, as `OPS_BREVO_API_KEY` in `staging-operations`. Restrict it to the
+transactional-email permissions needed for sending where the account supports
+this. Do not reuse production Supabase's SMTP settings or regenerate its keys.
+The API origin/path is pinned to `https://api.brevo.com/v3/smtp/email`; code accepts
+no alternate URL and never follows redirects or retries a send. The payload has
+only the approved sender/recipient, a fixed staging subject, time and allowlisted
+operational codes. No identities, messages, tokens or ID images are sent.
+[Brevo transactional API](https://developers.brevo.com/docs/send-a-transactional-email)
+and [API key permissions](https://help.brevo.com/hc/en-us/articles/40158277171474-About-API-key-permissions).
+
+Dispatch `alert-test` through the staging QA launcher's `staging_operation` after
+the exact staging commit passes CI. The dedicated reviewed `alert-delivery` job
+receives **only** the Brevo credential: no database, Storage, backup-vault,
+Supabase management or Vercel secrets are released to it. This operation is
+independent of the disabled monitoring/daily-backup schedule flags. It sends at
+most one synthetic message to `ucmarketplace.security@gmail.com`. HTTP 201 proves
+acceptance, not inbox arrival; record the recipient's inbox/spam confirmation.
+On an ambiguous timeout inspect Brevo privately before authorizing another test.
 
 `npm.cmd run ops:alerts:test` sends at most one fixed synthetic test event to the
 exact approved HTTPS origin, requires `OPS_ALERTS_ENABLED=1` and
 `OPS_ALERT_TEST_CONFIRM=ucmarketplace.security@gmail.com`, follows no redirects
 and never retries automatically. A successful HTTP response means **provider
 acceptance**, not inbox delivery; the recipient must confirm delivery. No test
-request is sent while the provider/origin is unconfigured. Review cooldown,
+request is sent while the selected transport is unconfigured. Review cooldown,
 deduplication, acknowledgement and recovery notification in the selected service
 before enabling `STAGING_ALERTS_ENABLED` and `STAGING_MONITORING_ENABLED`.
 The required reviewer checkpoint applies to monitoring schedules as well;

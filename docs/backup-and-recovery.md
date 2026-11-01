@@ -5,6 +5,26 @@ Production stays deployment-disabled and every hosted operations command current
 accepts only registered staging. Do not change the environment registry to bypass
 that restriction. No hosted database has been restored or reset.
 
+## Execution checkpoint: 2026-11-01
+
+The protected `staging-operations` environment has all five backup secrets,
+including the existing staging-only Storage service key. Its sole-owner review
+is configured by explicit approval; administrator bypass remains disabled.
+Read-only source inspection found the five marked fixture accounts, 15 owned
+Storage objects, no unknown accounts/object owners, and 20 migrations.
+
+[Staging PR #14](https://github.com/justinedupa2005/uc-marketplace/pull/14)
+publishes the exact-bundle recovery implementation. Its first CI run passed
+type checking, lint, regression tests and database validation, then **failed the
+dependency gate** on newly reported development-only minimatch advisory
+[GHSA-g3hv-75wg-m249](https://github.com/isaacs/minimatch/security/advisories/GHSA-g3hv-75wg-m249).
+The installed audit reports 16 moderate lint-tooling findings; the compatible
+upstream fix/temporary scoped deferral still requires review. The existing gate
+has not been bypassed or changed to ignore them. The credentialed capture/restore
+has **not** run. Daily backups, monitoring schedules and alert delivery remain
+disabled. Brevo was selected for alerts; verified sender/API-key configuration
+and one consented inbox-confirmed delivery test remain outstanding.
+
 ## Verified provider baseline
 
 Read-only inspection on 2026-10-29 confirmed the current Supabase organization is

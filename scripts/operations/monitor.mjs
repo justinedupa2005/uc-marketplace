@@ -7,6 +7,7 @@ import { connect } from "./database.mjs";
 import { prepareCa } from "./backup.mjs";
 import { command, controlledEnvironment } from "./process.mjs";
 import { resticClient } from "./restic.mjs";
+import { incidentCodes, sendBrevoAlert } from "./brevo.mjs";
 
 export const logQuery = `select
   countIf(source='edge_logs') as requests,
@@ -149,14 +150,14 @@ export async function monitor(env, adapters = {}) {
 export async function notify(report, env, fetcher = fetch) {
   validateTarget(env);
   assert.equal(env.OPS_ALERTS_ENABLED, "1");
-  assert.ok(policy.staging.monitoringEnabled && policy.staging.alertWebhookOrigin);
-  const url = new URL(env.OPS_ALERT_WEBHOOK_URL);
-  assert.equal(url.origin, policy.staging.alertWebhookOrigin); assert.equal(url.protocol, "https:"); assert.ok(!url.username && !url.password);
-  assert.ok(Array.isArray(report.incidents) && report.incidents.every(code => ["DEPLOYMENT_NOT_READY", "RUNTIME_COVERAGE_INCOMPLETE", "SERVER_ERRORS", "DATABASE_UNAVAILABLE",
-    "DATABASE_CONNECTION_PRESSURE", "SLOW_ACTIVE_QUERIES", "CAPACITY_BUDGETS_UNCONFIGURED", "DATABASE_CAPACITY_PRESSURE", "STORAGE_CAPACITY_PRESSURE",
-    "SERVICE_LOGS_UNAVAILABLE", "API_ERROR_SPIKE", "AUTH_FAILURE_SPIKE", "TRAFFIC_REVIEW", "SMTP_FAILURES", "DATABASE_ERRORS", "STORAGE_ERRORS", "REALTIME_ERRORS", "RESERVATION_FAILURES", "BACKUP_NOT_VERIFIED_FRESH"].includes(code)));
+  assert.equal(policy.staging.monitoringEnabled, true);
+  assert.ok(Array.isArray(report.incidents) && report.incidents.every(code => incidentCodes.includes(code)));
   assert.equal(new Date(report.sampledAt).toISOString(), report.sampledAt);
   if (!report.incidents.length) return;
+  if (policy.staging.alertProvider === "brevo") return sendBrevoAlert(report, env, fetcher);
+  assert.ok(policy.staging.alertWebhookOrigin);
+  const url = new URL(env.OPS_ALERT_WEBHOOK_URL);
+  assert.equal(url.origin, policy.staging.alertWebhookOrigin); assert.equal(url.protocol, "https:"); assert.ok(!url.username && !url.password);
   const response = await fetcher(url, { method: "POST", redirect: "error", signal: AbortSignal.timeout(10000), headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ application: "UC Online Shop", environment: "staging", sampledAt: report.sampledAt, incidents: report.incidents }) });
   assert.ok(response.ok, "Alert delivery failed; do not silently retry.");

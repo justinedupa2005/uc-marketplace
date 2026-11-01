@@ -130,7 +130,7 @@ jobs:
       # environment dumps, SQL export files, or credential-bearing artifacts.
 
   monitoring:
-    if: (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging' && (inputs.operation == 'monitor' || inputs.operation == 'alert-test')) || (github.event_name == 'schedule' && github.event.schedule == '*/15 * * * *' && vars.STAGING_MONITORING_ENABLED == 'true')
+    if: (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging' && inputs.operation == 'monitor') || (github.event_name == 'schedule' && github.event.schedule == '*/15 * * * *' && vars.STAGING_MONITORING_ENABLED == 'true')
     environment: staging-operations
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -154,11 +154,9 @@ jobs:
         run: node scripts/operations/verify-source.mjs
         env:
           GH_TOKEN: ${{ github.token }}
-      - name: Collect sanitized health signals or send one explicitly requested alert test
+      - name: Collect sanitized health signals and optionally notify
         run: |
-          if [ "$OPS_OPERATION" = "alert-test" ]; then
-            npm run ops:alerts:test
-          elif [ "$OPS_ALERTS_ENABLED" = "1" ]; then
+          if [ "$OPS_ALERTS_ENABLED" = "1" ]; then
             npm run ops:monitor -- --notify
           else
             npm run ops:monitor
@@ -178,8 +176,40 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ vars.BACKUP_REGION }}
-          OPS_ALERTS_ENABLED: ${{ (inputs.operation == 'alert-test' || vars.STAGING_ALERTS_ENABLED == 'true') && '1' || '0' }}
+          OPS_ALERTS_ENABLED: ${{ vars.STAGING_ALERTS_ENABLED == 'true' && '1' || '0' }}
           OPS_ALERT_WEBHOOK_URL: ${{ secrets.OPS_ALERT_WEBHOOK_URL }}
-          OPS_ALERT_TEST_CONFIRM: ${{ inputs.operation == 'alert-test' && 'ucmarketplace.security@gmail.com' || '' }}
+          OPS_BREVO_API_KEY: ${{ secrets.OPS_BREVO_API_KEY }}
       # All scheduled operations retain required review. No notification service,
       # tokens, automatic approvals or provider accounts are created implicitly.
+
+  alert-delivery:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging' && inputs.operation == 'alert-test'
+    environment: staging-operations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: staging
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "22"
+          cache: npm
+      - run: node scripts/operations/verify-source.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - run: npm ci
+      - name: Recheck staging before the single explicit Brevo delivery test
+        run: node scripts/operations/verify-source.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Send exactly one synthetic operational test; no automatic retry
+        run: npm run ops:alerts:test
+        env:
+          OPS_ENV: staging
+          OPS_PROJECT_REF: niocptgzzbozpbfzifdk
+          OPS_ALERTS_ENABLED: "1"
+          OPS_ALERT_TEST_CONFIRM: ucmarketplace.security@gmail.com
+          OPS_BREVO_API_KEY: ${{ secrets.OPS_BREVO_API_KEY }}
+      # No database, Storage, vault, management or Vercel credentials in this job.

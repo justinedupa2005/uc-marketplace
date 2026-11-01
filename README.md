@@ -73,7 +73,8 @@ complete staging bundle and restores that exact vault backup in a new isolated
 container before writing encrypted restore evidence. Manual runs are independent
 of scheduling; protected jobs require the sole owner's explicit review. Cron
 triggers are not an unattended service while that review is required. The
-monitoring/alert-test workflow is prepared, but no alert provider is configured.
+monitoring/alert-test workflow is prepared; Brevo is selected, with verified
+sender, dedicated API credential and delivery confirmation still pending.
 Native synthetic restoration passed **129** security assertions and recovered **6**
 files; read-only staging monitoring also worked. The latest
 [synthetic-only B2 drill](https://github.com/justinedupa2005/uc-marketplace/actions/runs/40888196486)

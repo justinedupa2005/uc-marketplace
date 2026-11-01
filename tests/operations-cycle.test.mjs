@@ -5,6 +5,7 @@ import { policy, registry } from "../scripts/operations/policy.mjs";
 import { validateBundle, validateRestoreEvidence, readJsonSnapshot } from "../scripts/operations/bundle.mjs";
 import { verifyScheduledReadiness } from "../scripts/operations/cycle.mjs";
 import { testAlert } from "../scripts/operations/alert-test.mjs";
+import { sendBrevoAlert } from "../scripts/operations/brevo.mjs";
 
 const run = "11111111-1111-4111-8111-111111111111", sha = "a".repeat(40);
 const ids = { database: "1".repeat(64), media: "2".repeat(64), verification: "3".repeat(64), bundle: "4".repeat(64) };
@@ -73,6 +74,8 @@ test("an unconfigured or unapproved alert provider cannot receive even a test re
 
 test("alert test sends only a fixed synthetic payload to the exact approved HTTPS origin, without retry or inbox claims", async () => {
   const original = policy.staging.alertWebhookOrigin;
+  const provider = policy.staging.alertProvider;
+  policy.staging.alertProvider = "webhook";
   policy.staging.alertWebhookOrigin = "https://alerts.example.test";
   const configured = { ...env, OPS_ALERTS_ENABLED: "1", OPS_ALERT_TEST_CONFIRM: policy.staging.alertEmail, OPS_ALERT_WEBHOOK_URL: "https://alerts.example.test/private-path" };
   let calls = 0;
@@ -88,7 +91,36 @@ test("alert test sends only a fixed synthetic payload to the exact approved HTTP
     await assert.rejects(testAlert({ ...configured, OPS_ALERT_WEBHOOK_URL: "https://another.example.test/private" }, async () => { throw new Error("Must not send"); }));
     await assert.rejects(testAlert(configured, async () => { calls++; return new Response("rejected", { status: 500 }); }));
     assert.equal(calls, 2);
-  } finally { policy.staging.alertWebhookOrigin = original; }
+  } finally { policy.staging.alertWebhookOrigin = original; policy.staging.alertProvider = provider; }
+});
+
+test("Brevo sends one consented, fixed-payload test to its pinned API; missing sender/key and unsafe input cannot send", async () => {
+  const sender = policy.staging.alertSenderEmail, verified = policy.staging.alertSenderVerified;
+  let calls = 0;
+  const secret = "synthetic-test-only-operator-api-value-".repeat(2);
+  const configured = { ...env, OPS_ALERTS_ENABLED: "1", OPS_ALERT_TEST_CONFIRM: policy.staging.alertEmail, OPS_BREVO_API_KEY: secret };
+  try {
+    policy.staging.alertSenderEmail = "operations@example.test";
+    policy.staging.alertSenderVerified = true;
+    const result = await testAlert(configured, async (url, init) => {
+      calls++; assert.equal(url.href, "https://api.brevo.com/v3/smtp/email"); assert.equal(init.redirect, "error");
+      assert.equal(init.headers["api-key"], secret);
+      const body = JSON.parse(init.body);
+      assert.deepEqual(body.to, [{ email: "ucmarketplace.security@gmail.com" }]);
+      assert.deepEqual(body.sender, { email: "operations@example.test", name: "UC Online Shop Operations" });
+      assert.match(body.textContent, /OPS_TEST_ALERT/); assert.ok(!body.textContent.includes(secret));
+      return new Response(null, { status: 201 });
+    });
+    assert.equal(result.provider, "brevo"); assert.equal(result.providerAccepted, true); assert.equal(result.inboxDeliveryConfirmed, false);
+    const forbidden = async () => { throw new Error("Must not send"); };
+    await assert.rejects(testAlert({ ...configured, OPS_BREVO_API_KEY: undefined }, forbidden));
+    await assert.rejects(testAlert({ ...configured, OPS_ALERT_TEST_CONFIRM: "unapproved@example.test" }, forbidden));
+    policy.staging.alertSenderVerified = false; await assert.rejects(testAlert(configured, forbidden));
+    policy.staging.alertSenderVerified = true;
+    await assert.rejects(sendBrevoAlert({ sampledAt: new Date().toISOString(), incidents: ["unreviewed student content"] }, configured, forbidden, true));
+    for (const status of [400, 401, 429, 500]) await assert.rejects(testAlert(configured, async () => { calls++; return new Response(null, { status }); }));
+    assert.equal(calls, 5);
+  } finally { policy.staging.alertSenderEmail = sender; policy.staging.alertSenderVerified = verified; }
 });
 
 test("manual vault operations are independent of daily scheduling and retain staging review, source checks and step-only secrets", async () => {
@@ -121,4 +153,14 @@ test("the registered QA workflow calls same-commit operations only after CI with
   assert.match(workflow, /cancel-in-progress: \$\{\{.*inputs\.staging_operation == 'none'/);
   const called = await readFile(new URL("../.github/workflows/backups-and-restore.yml", import.meta.url), "utf8");
   assert.match(called, /workflow_call:\s+inputs:\s+operation:/);
+});
+
+test("the explicit Brevo delivery job never releases database, vault or hosting credentials", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/backups-and-restore.yml", import.meta.url), "utf8");
+  const job = workflow.slice(workflow.indexOf("\n  alert-delivery:"));
+  assert.match(job, /environment: staging-operations/);
+  assert.match(job, /github\.ref == 'refs\/heads\/staging'.*inputs\.operation == 'alert-test'/);
+  assert.equal((job.match(/node scripts\/operations\/verify-source\.mjs/g) ?? []).length, 2);
+  assert.match(job, /npm run ops:alerts:test/);
+  assert.deepEqual([...job.matchAll(/\$\{\{ secrets\.([A-Z_]+) \}\}/g)].map(match => match[1]), ["OPS_BREVO_API_KEY"]);
 });
