@@ -4,6 +4,7 @@ import { connect, dumpDatabase, importSnapshot, inventorySql } from "./database.
 import { validateBackupPolicy, validateObject, registry, runId, assertSyntheticSource } from "./policy.mjs";
 import { boundedBody, inventoryDigest, storagePack, writeStream } from "./storage.mjs";
 import { validateRestoreEvidence } from "./bundle.mjs";
+import { producerFailureMarker } from "./diagnostics.mjs";
 
 // Private stdout is consumed only by restic, never inherited by the terminal.
 try {
@@ -49,4 +50,4 @@ try {
     assert.equal(evidence.runId, env.OPS_RUN_ID);
     await writeStream(process.stdout, JSON.stringify(evidence));
   } else throw new Error();
-} catch { process.stderr.write("Backup producer failed; private details withheld.\n"); process.exitCode = 1; }
+} catch (error) { process.stderr.write(producerFailureMarker(error)); process.exitCode = 1; }

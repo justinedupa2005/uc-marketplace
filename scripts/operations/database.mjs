@@ -6,6 +6,7 @@ import { validateTarget, assertSyntheticSource } from "./policy.mjs";
 import { command, controlledEnvironment } from "./process.mjs";
 import path from "node:path";
 import { assertLocalDockerEndpoint } from "../qa/lib/local-stack.mjs";
+import { databaseFailureCode } from "./diagnostics.mjs";
 
 export const schemas = ["public", "private", "auth", "storage", "supabase_migrations", "extensions"];
 export const inventorySql = `select bucket_id,name,owner_id,metadata,updated_at::text,
@@ -90,18 +91,22 @@ export function publicationRestoreSql(value) {
 }
 
 export async function dumpDatabase(env, output) {
-  const { client, pgEnv } = await connect(env);
+  let phase = "DUMP_DATABASE_CONNECT_FAILED", connection;
   try {
+    connection = await connect(env);
+    const { client, pgEnv } = connection;
+    phase = "DUMP_SNAPSHOT_FAILED";
     if (env.OPS_DATA_SCOPE === "synthetic-only") {
       await importSnapshot(client, env.OPS_EXPORTED_SNAPSHOT);
       await assertSyntheticSource(client);
     }
     const server = Number((await client.query("show server_version_num")).rows[0].server_version_num);
+    phase = "DUMP_TOOL_FAILED";
     const base = controlledEnvironment(env);
     for (const key of Object.keys(base)) if (/^(OPS_|AWS_|RESTIC_)/.test(key)) delete base[key];
     let binary = env.OPS_PG_DUMP_BINARY || "docker", prefix = [], childEnv = { ...base, ...pgEnv };
     if (!env.OPS_PG_DUMP_BINARY) {
-      const endpoint = JSON.parse((await command("docker", ["context", "inspect", "--format", "{{json .Endpoints.docker.Host}}"])).toString());
+      const endpoint = JSON.parse((await command("docker", ["context", "inspect", "--format", "{{json .Endpoints.docker.Host}}"], { postgresDumpDiagnostics: true })).toString());
       assertLocalDockerEndpoint(endpoint);
       const pins = JSON.parse(await readFile(new URL("../../config/operations-tools.json", import.meta.url), "utf8"));
       assert.ok(path.isAbsolute(env.OPS_CA_FILE) && !/[\r\n,]/.test(env.OPS_CA_FILE));
@@ -110,14 +115,19 @@ export async function dumpDatabase(env, output) {
         "--mount", `type=bind,source=${env.OPS_CA_FILE},target=/provider-ca.crt,readonly`,
         ...Object.keys(pgEnv).flatMap(key => ["--env", key]), "--entrypoint", "pg_dump", pins.postgresImage];
     }
-    const version = (await command(binary, [...prefix, "--version"], { env: childEnv, timeoutMs: 180000 })).toString();
+    const version = (await command(binary, [...prefix, "--version"], { env: childEnv, timeoutMs: 180000, postgresDumpDiagnostics: true })).toString();
     const match = /pg_dump \(PostgreSQL\) (\d+)\.(\d+)/.exec(version);
     const major = Number(match?.[1]), minor = Number(match?.[2]);
-    assert.ok((major === 17 && minor >= 11 || major === 18 && minor >= 5) && major >= Math.floor(server / 10000), "Use reviewed patched PostgreSQL clients matching or newer than the source.");
+    assert.ok((major === 17 && minor >= 11 || major === 18 && minor >= 5) && major >= Math.floor(server / 10000),
+      Object.assign(new Error("Use reviewed patched PostgreSQL clients matching or newer than the source."), { operationCodes: ["DUMP_VERSION_REJECTED"] }));
     // Preserve grants/RLS, custom functions, auth and storage metadata. No data
     // SQL or password hashes are written to local plaintext files.
     const args = ["--format=custom", "--no-password", "--lock-wait-timeout=30s", `--snapshot=${validateExportedSnapshot(env.OPS_EXPORTED_SNAPSHOT)}`,
       ...schemas.map(schema => `--schema=${schema}`)];
-    await command(binary, [...prefix, ...args], { env: childEnv, output, timeoutMs: 900000 });
-  } finally { await client.end(); }
+    phase = "DUMP_COMMAND_FAILED";
+    await command(binary, [...prefix, ...args], { env: childEnv, output, timeoutMs: 900000, postgresDumpDiagnostics: true });
+  } catch (error) {
+    error.operationCodes = [...new Set([phase, ...(error.operationCodes ?? (error?.code ? [databaseFailureCode(error)] : []))])];
+    throw error;
+  } finally { if (connection) await connection.client.end(); }
 }

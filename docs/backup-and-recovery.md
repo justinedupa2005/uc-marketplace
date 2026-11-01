@@ -21,8 +21,8 @@ dependency gate** on newly reported development-only minimatch advisory
 The installed audit reports 16 moderate lint-tooling findings. The owner then
 approved a seven-day, exact-path/version development-only exception, expiring
 November 8 at 00:00 Asia/Manila; see [the reviewed dependency policy](ci-dependency-security.md).
-Production findings and every new/changed advisory still fail CI. The credentialed capture/restore
-has **not** run. Daily backups, monitoring schedules and alert delivery remain
+Production findings and every new/changed advisory still fail CI. A complete
+credentialed capture/restore has **not** succeeded. Daily backups, monitoring schedules and alert delivery remain
 disabled. Brevo was selected for alerts, with verified sender
 `ucmarketplace.security@gmail.com`; the dedicated API key and one consented,
 inbox-confirmed delivery test remain outstanding.
@@ -42,6 +42,31 @@ values using fixed `*_REQUIRED` codes in `preflight-bindings`, with no values,
 lengths or hashes in diagnostics. Required interface declarations check mapping
 presence, not whether a value exists.
 [GitHub reusable-workflow secret requirements](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows).
+
+The reviewed follow-up run
+[41313193710](https://github.com/justinedupa2005/uc-marketplace/actions/runs/41313193710)
+received all required bindings. Its latest attempt passed vault, database,
+synthetic-owner and private-Storage preflight, then failed in **capture**, with no
+fixed error codes. No complete bundle or restoration evidence was certified.
+Read-only diagnosis validated the actual manifest against staging metadata and
+aggregate table fingerprints, all 11 required protected tables, the messages-only
+Realtime contract, 15 valid file headers, and existing table/sequence read and RLS
+bypass permissions. The pinned Linux-amd64 PostgreSQL image exists and matches
+its digest. These checks do not prove that the database export succeeded.
+
+Capture now distinguishes policy, vault, connection, snapshot, inventory,
+manifest, database/media/verification, consistency, integrity and bundle phases.
+The export producer propagates **allowlisted codes only** through restic's
+stderr boundary; it never prints an Error, command, SQL, hostname, file path,
+credential, snapshot token or raw provider output. Known codes distinguish
+snapshot, version, TLS, permission, connection, Docker/image and read-only
+refusals; unknown failures remain explicit without private details. Repository
+lock and malformed/missing completion-summary failures are classified separately.
+A real local-restic failure-propagation test rejected a truncated synthetic
+producer, preserved the fixed codes and created no passing snapshot. The separate
+three-object encrypted local Storage round-trip also passed. Hosted capture and
+exact-bundle restoration still need a fresh reviewed run; no credentials,
+permissions, source data, schedules, deployment or production settings changed.
 
 ## Verified provider baseline
 

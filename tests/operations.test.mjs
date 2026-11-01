@@ -253,13 +253,18 @@ test("a failed component cannot create a completion marker, and its read-only sn
   }, async end() { ended = true; } };
   const service = `header.${Buffer.from(JSON.stringify({ ref, role: "service_role", exp: 9999999999 })).toString("base64url")}.signature`;
   try {
-    await assert.rejects(capture({ ...configured, OPS_CONFIRM: `${ref}:backup`, OPS_SERVICE_ROLE_KEY: service }, {
-      restic: { verify: async () => {}, check: async () => {} }, connect: async () => ({ client }),
-      worker: () => ({ backup: async component => { executed.push(component); if (component === "media") throw new Error("private"); return sha; } }),
-    }));
-    assert.deepEqual(executed, ["database", "media"]);
-    assert.ok(queries.includes("begin isolation level repeatable read read only"));
-    assert.ok(queries.includes("rollback")); assert.equal(ended, true);
+    for (const failed of ["database", "media", "verification", "bundle"]) {
+      executed.length = 0; queries.length = 0; ended = false;
+      await assert.rejects(capture({ ...configured, OPS_CONFIRM: `${ref}:backup`, OPS_SERVICE_ROLE_KEY: service }, {
+        restic: { verify: async () => {}, check: async () => {} }, connect: async () => ({ client }),
+        worker: () => ({ backup: async component => { executed.push(component); if (component === failed) throw new Error("private"); return sha; } }),
+      }), error => {
+        assert.equal(error.operationPhase, `capture-${failed}`); assert.deepEqual(error.operationCodes, ["CAPTURE_STEP_FAILED"]); return true;
+      });
+      assert.deepEqual(executed, ["database", "media", "verification", "bundle"].slice(0, ["database", "media", "verification", "bundle"].indexOf(failed) + 1));
+      assert.ok(queries.includes("begin isolation level repeatable read read only"));
+      assert.ok(queries.includes("rollback")); assert.equal(ended, true);
+    }
   } finally { Object.assign(policy.staging, original); }
 });
 

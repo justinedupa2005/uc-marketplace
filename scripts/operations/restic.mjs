@@ -19,9 +19,11 @@ export function resticClient(env, execute = command) {
       // truncated pg_dump/Storage stream as a successful snapshot.
       const result = await run(["backup", "--json", "--quiet", "--host", "uc-marketplace-staging", "--tag", "ucm:staging",
         "--tag", `run:${id}`, "--tag", `component:${component}`, "--stdin-filename", `${component}.backup`, "--stdin-from-command", "--", ...producer]);
-      const summary = result.toString().trim().split(/\r?\n/).map(line => JSON.parse(line)).findLast(row => row.message_type === "summary");
-      assert.match(summary?.snapshot_id ?? "", snapshotId, "A complete restic snapshot is required.");
-      return summary.snapshot_id;
+      try {
+        const summary = result.toString().trim().split(/\r?\n/).map(line => JSON.parse(line)).findLast(row => row.message_type === "summary");
+        assert.match(summary?.snapshot_id ?? "", snapshotId, "A complete restic snapshot is required.");
+        return summary.snapshot_id;
+      } catch { throw Object.assign(new Error("A complete restic summary is required; private output withheld."), { operationCodes: ["RESTIC_SUMMARY_INVALID"] }); }
     },
     async snapshots() { return JSON.parse((await run(["snapshots", "--json", "--host", "uc-marketplace-staging", "--tag", "ucm:staging"])).toString()); },
     async check(full = false) { await run(["check", ...(full ? ["--read-data"] : [])], { timeoutMs: 1800000 }); },
