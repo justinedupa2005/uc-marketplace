@@ -27,6 +27,22 @@ disabled. Brevo was selected for alerts, with verified sender
 `ucmarketplace.security@gmail.com`; the dedicated API key and one consented,
 inbox-confirmed delivery test remain outstanding.
 
+The first protected capture/restore run
+[41309448551](https://github.com/justinedupa2005/uc-marketplace/actions/runs/41309448551)
+passed CI and owner review, but stopped **before capture**. All five required
+credentials were stored in `staging-operations`; redacted runner bindings showed
+all five were empty. Non-secret environment variables arrived correctly. The
+caller omitted the reusable workflow's named secret mappings. Declaring the
+environment alone does not pass its secrets across a reusable-workflow boundary.
+The fix explicitly maps the nine operation-secret names and declares the five
+backup mappings required, without `secrets: inherit`. Environment values remain
+behind the existing `staging-operations` review; no key/password is rotated or
+copied to a repository-level secret. Runtime guards independently reject empty
+values using fixed `*_REQUIRED` codes in `preflight-bindings`, with no values,
+lengths or hashes in diagnostics. Required interface declarations check mapping
+presence, not whether a value exists.
+[GitHub reusable-workflow secret requirements](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows).
+
 ## Verified provider baseline
 
 Read-only inspection on 2026-10-29 confirmed the current Supabase organization is
@@ -213,8 +229,9 @@ project recovery may require the provider's encryption-key transfer procedure.
    From the registered **Security and workflow checks** workflow, select staging
    and the `staging_operation` value `verify` or `capture-restore`. The same-commit
    reusable operations job runs only after CI and still requires the separate
-   `staging-operations` review. It inherits no repository secrets; reviewed jobs
-   resolve only their own environment secrets. This launcher avoids changing
+   `staging-operations` review. It explicitly maps only the declared operation
+   secret names; the protected environment supplies its scoped values. Broad
+   repository/organization secret inheritance is forbidden. This launcher avoids changing
    production/main just to register a new manual workflow.
    Manual operations do not
    depend on `STAGING_BACKUPS_ENABLED` and cannot enable scheduling. Set the

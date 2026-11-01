@@ -7,8 +7,29 @@ on:
         description: Explicit protected operation from the staging QA launcher
         type: string
         required: true
-    # Environment secrets are resolved by the reviewed job below, not passed
-    # from the caller. The original workflow_dispatch event/ref is preserved.
+    secrets:
+      OPS_DATABASE_URL:
+        required: true
+      OPS_SERVICE_ROLE_KEY:
+        required: true
+      RESTIC_PASSWORD:
+        required: true
+      BACKUP_ACCESS_KEY_ID:
+        required: true
+      BACKUP_SECRET_ACCESS_KEY:
+        required: true
+      OPS_MANAGEMENT_TOKEN:
+        required: false
+      OPS_VERCEL_TOKEN:
+        required: false
+      OPS_ALERT_WEBHOOK_URL:
+        required: false
+      OPS_BREVO_API_KEY:
+        required: false
+    # The caller must map these names, including environment-only secrets. The
+    # reviewed staging-operations job resolves its own environment values.
+    # Required declarations check mapping presence, not nonempty values; runtime
+    # guards below independently reject empty bindings. No secrets: inherit.
   workflow_dispatch:
     inputs:
       operation:
