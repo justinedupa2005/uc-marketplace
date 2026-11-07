@@ -73,6 +73,12 @@ jobs:
       - name: Check source boundaries and browser bundles
         run: npm run qa:security:bundles
       - run: npx playwright install --with-deps chromium
+      - name: Install reviewed Restic for the synthetic recovery regression
+        run: npm run ops:install-restic
+      - name: Restore encrypted synthetic database and files on an internal Docker network
+        run: npm run ops:drill
+        env:
+          OPS_RESTIC_BINARY: ${{ github.workspace }}/.qa/tools/restic-0.19.1/restic
       - run: npm run test:e2e
       # Authenticated API/Storage/concurrency/email acceptance remains a
       # separate explicit disposable-stack release gate; see the QA guide.

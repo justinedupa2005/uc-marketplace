@@ -16,6 +16,7 @@ import { resticClient } from "./restic.mjs";
 import { inventorySql, schemas, databaseManifest, publicationRestoreSql } from "./database.mjs";
 import { decodeStoragePack, writeStream } from "./storage.mjs";
 import { assertDrillContainer } from "./drill-producer.mjs";
+import { openRestoreTunnel } from "./restore-tunnel.mjs";
 import { syntheticPng, syntheticProjectRef, persistentSyntheticWorkflow } from "./drill-fixtures.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -40,7 +41,7 @@ export async function drill(env = process.env) {
   assertLocalDockerEndpoint(inspected);
   await command("docker", ["version", "--format", "{{.Server.Version}}"]);
   const pins = JSON.parse(await readFile(new URL("../../config/operations-tools.json", import.meta.url), "utf8"));
-  const started = Date.now(), id = randomUUID(), name = `ucm-restore-${id}`;
+  const started = Date.now(), id = randomUUID(), name = `ucm-restore-${id}`, network = `ucm-restore-net-${id}`;
   const parent = path.join(root, ".qa", "operations", "drills");
   await mkdir(parent, { recursive: true, mode: 0o700 });
   const directory = await mkdtemp(path.join(parent, "run-"));
@@ -50,7 +51,7 @@ export async function drill(env = process.env) {
   // live repository URL/password or an operator database/service key.
   for (const key of Object.keys(privateEnv)) if (key.startsWith("OPS_") && !["OPS_RESTIC_BINARY", "OPS_DRILL_ID", "OPS_DRILL_CONTAINER"].includes(key)) delete privateEnv[key];
   const restic = resticClient(privateEnv), binary = env.OPS_RESTIC_BINARY || "restic";
-  let attemptedCreation = false, source, target, browser, clean = false;
+  let attemptedCreation = false, networkAttempted = false, source, target, browser, tunnel, clean = false;
   const evidence = { version: 1, runId: id, status: "failed", source: "synthetic-local-only", productionTouched: false,
     phase: "repository",
     databaseRestored: false, storageRestored: false, imageDecoded: false, tablesMatched: false, catalogAssertions: 0, cleanup: false };
@@ -59,14 +60,20 @@ export async function drill(env = process.env) {
     const config = JSON.parse((await command(binary, ["--no-cache", "cat", "config"], { env: privateEnv })).toString());
     await restic.verify(config.id);
     evidence.phase = "container";
+    networkAttempted = true;
+    await command("docker", ["network", "create", "--internal", "--label", `ucmarketplace.restore-drill=${id}`, network], { env: privateEnv });
+    const networkInfo = JSON.parse((await command("docker", ["network", "inspect", network], { env: privateEnv })).toString());
+    assert.equal(networkInfo.length, 1); assert.equal(networkInfo[0].Internal, true);
+    assert.equal(networkInfo[0].Name, network); assert.equal(networkInfo[0].Labels["ucmarketplace.restore-drill"], id);
     attemptedCreation = true;
     await command("docker", ["run", "--detach", "--rm", "--name", name, "--label", `ucmarketplace.restore-drill=${id}`,
-      "--publish", "127.0.0.1::5432", "--read-only", "--security-opt", "no-new-privileges:true", "--tmpfs", "/var/lib/postgresql/data:rw,size=512m",
+      "--network", network, "--read-only", "--security-opt", "no-new-privileges:true", "--tmpfs", "/var/lib/postgresql/data:rw,size=512m",
       "--tmpfs", "/var/run/postgresql:rw,size=16m", "--tmpfs", "/tmp:rw,size=32m", "--env", "POSTGRES_PASSWORD", pins.postgresImage], { env: privateEnv, timeoutMs: 180000 });
     const container = await assertDrillContainer(privateEnv);
-    const bindings = container.NetworkSettings.Ports["5432/tcp"];
-    assert.equal(bindings.length, 1); assert.equal(bindings[0].HostIp, "127.0.0.1");
-    const options = { host: "127.0.0.1", port: Number(bindings[0].HostPort), user: "postgres", password: privateEnv.POSTGRES_PASSWORD,
+    assert.deepEqual(Object.keys(container.NetworkSettings.Networks), [network]);
+    assert.ok(Object.values(container.NetworkSettings.Ports).every(bindings => !bindings?.length));
+    tunnel = await openRestoreTunnel(privateEnv);
+    const options = { host: tunnel.host, port: tunnel.port, user: "postgres", password: privateEnv.POSTGRES_PASSWORD,
       ssl: false, database: "postgres", connectionTimeoutMillis: 2000, statement_timeout: 60000 };
     for (let attempt = 0; attempt < 40; attempt++) {
       const client = new pg.Client(options);
@@ -178,6 +185,7 @@ export async function drill(env = process.env) {
     throw error;
   } finally {
     await browser?.close().catch(() => {}); await source?.end().catch(() => {}); await target?.end().catch(() => {});
+    await tunnel?.close();
     if (attemptedCreation) {
       const owned = (await command("docker", ["ps", "--all", "--filter", `label=ucmarketplace.restore-drill=${id}`, "--filter", `name=^/${name}$`, "--format", "{{.ID}}"])).toString().trim();
       if (owned) {
@@ -188,6 +196,16 @@ export async function drill(env = process.env) {
       }
       clean = true;
     } else clean = true;
+    if (networkAttempted) {
+      const owned = (await command("docker", ["network", "ls", "--filter", `label=ucmarketplace.restore-drill=${id}`, "--format", "{{.Name}}"], { env: privateEnv })).toString().trim();
+      if (owned) {
+        assert.equal(owned, network);
+        const inspected = JSON.parse((await command("docker", ["network", "inspect", network], { env: privateEnv })).toString());
+        assert.equal(inspected.length, 1); assert.equal(inspected[0].Name, network);
+        assert.equal(inspected[0].Labels["ucmarketplace.restore-drill"], id); assert.equal(inspected[0].Internal, true);
+        await command("docker", ["network", "rm", network], { env: privateEnv });
+      }
+    }
     evidence.cleanup = clean; evidence.elapsedSeconds = Math.ceil((Date.now() - started) / 1000);
     if (!clean) evidence.status = "failed";
     await writeFile(path.join(directory, "evidence.json"), `${JSON.stringify(evidence)}\n`, { flag: "wx", mode: 0o600 });

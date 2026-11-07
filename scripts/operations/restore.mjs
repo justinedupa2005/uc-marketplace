@@ -16,6 +16,7 @@ import { decodeStoragePack, inventoryDigest, writeStream } from "./storage.mjs";
 import { readJsonSnapshot, validateBundle } from "./bundle.mjs";
 import { registry, validateBackupPolicy, snapshotId } from "./policy.mjs";
 import { resticClient } from "./restic.mjs";
+import { openRestoreTunnel } from "./restore-tunnel.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -38,30 +39,36 @@ export async function restoreBundle(env, bundleId, sourceSha) {
   const evidence = { version: 1, environment: "staging", dataScope: "synthetic-only", status: "failed", repositoryId: selected.repositoryId,
     bundleId, runId: manifest.runId, sourceSha, databaseRestored: false, storageRestored: false, tablesMatched: false,
     imageDecoded: false, catalogAssertions: 0, restoredAccessChecks: 0, objectsRestored: 0, cleanup: false, productionTouched: false };
-  let attempted = false, networkAttempted = false, client, browser, phase = "restore-container";
+  let attempted = false, networkAttempted = false, client, browser, tunnel, phase = "restore-container";
+  let startupFailureCode = "RESTORE_NETWORK_CREATE_FAILED";
   try {
     networkAttempted = true;
     await command("docker", ["network", "create", "--internal", "--label", `ucmarketplace.restore-drill=${id}`, network], { env: containerEnv });
+    startupFailureCode = "RESTORE_NETWORK_INSPECT_FAILED";
     const networkInfo = JSON.parse((await command("docker", ["network", "inspect", network], { env: containerEnv })).toString());
     assert.equal(networkInfo.length, 1); assert.equal(networkInfo[0].Internal, true);
     assert.equal(networkInfo[0].Name, network); assert.equal(networkInfo[0].Labels["ucmarketplace.restore-drill"], id);
     attempted = true;
+    startupFailureCode = "RESTORE_CONTAINER_CREATE_FAILED";
     await command("docker", ["run", "--detach", "--rm", "--name", name, "--label", `ucmarketplace.restore-drill=${id}`,
       "--network", network,
-      "--publish", "127.0.0.1::5432", "--read-only", "--security-opt", "no-new-privileges:true", "--tmpfs", "/var/lib/postgresql/data:rw,size=768m",
+      "--read-only", "--security-opt", "no-new-privileges:true", "--tmpfs", "/var/lib/postgresql/data:rw,size=768m",
       "--tmpfs", "/var/run/postgresql:rw,size=16m", "--tmpfs", "/tmp:rw,size=32m", "--env", "POSTGRES_PASSWORD", pins.postgresImage],
     { env: containerEnv, timeoutMs: 180000 });
+    startupFailureCode = "RESTORE_CONTAINER_INSPECT_FAILED";
     const container = await assertDrillContainer(containerEnv);
     assert.deepEqual(Object.keys(container.NetworkSettings.Networks), [network]);
-    const bindings = container.NetworkSettings.Ports["5432/tcp"];
-    assert.equal(bindings.length, 1); assert.equal(bindings[0].HostIp, "127.0.0.1");
-    const options = { host: "127.0.0.1", port: Number(bindings[0].HostPort), user: "postgres", password: containerEnv.POSTGRES_PASSWORD,
+    assert.ok(Object.values(container.NetworkSettings.Ports).every(bindings => !bindings?.length));
+    startupFailureCode = "RESTORE_TUNNEL_FAILED";
+    tunnel = await openRestoreTunnel(containerEnv);
+    startupFailureCode = "RESTORE_DATABASE_NOT_READY";
+    const options = { host: tunnel.host, port: tunnel.port, user: "postgres", password: containerEnv.POSTGRES_PASSWORD,
       ssl: false, database: "postgres", connectionTimeoutMillis: 2000, statement_timeout: 60000 };
     for (let attempt = 0; attempt < 40; attempt++) {
       const pending = new pg.Client(options);
       try { await pending.connect(); client = pending; break; } catch { await pending.end(); await new Promise(resolve => setTimeout(resolve, 500)); }
     }
-    assert.ok(client, "Isolated restoration database did not start.");
+    assert.ok(client, Object.assign(new Error("Isolated restoration database did not start."), { operationCodes: ["RESTORE_DATABASE_NOT_READY"] }));
     phase = "restore-archive";
     await client.query("set timezone='UTC'");
     for (const role of manifest.database.roles) {
@@ -132,9 +139,12 @@ export async function restoreBundle(env, bundleId, sourceSha) {
     assert.equal(await page.locator("img").evaluate(async image => { await image.decode(); return image.naturalWidth > 0; }), true);
     evidence.imageDecoded = true; evidence.status = "passed";
   } catch (error) {
-    error.operationPhase = phase; throw error;
+    error.operationPhase = phase;
+    if (!error.operationCodes?.length) error.operationCodes = [phase === "restore-container" ? startupFailureCode : "RESTORE_STEP_FAILED"];
+    throw error;
   } finally {
     await browser?.close().catch(() => {}); await client?.end().catch(() => {});
+    await tunnel?.close();
     if (attempted) {
       const owned = (await command("docker", ["ps", "--all", "--filter", `label=ucmarketplace.restore-drill=${id}`, "--filter", `name=^/${name}$`, "--format", "{{.ID}}"], { env: containerEnv })).toString().trim();
       if (owned) { await assertDrillContainer(containerEnv, false); await command("docker", ["rm", "--force", name], { env: containerEnv }); }

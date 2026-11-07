@@ -7,6 +7,29 @@ that restriction. No hosted database has been restored or reset.
 
 ## Continuation checkpoint: 2026-11-07
 
+The protected run [42381225342](https://github.com/justinedupa2005/uc-marketplace/actions/runs/42381225342)
+on `99e064c` passed capture and failed at `restore-container`. The earlier CA
+readability fix is working. A local reproduction confirmed that PostgreSQL was
+healthy, but Docker returned no published port for the internal-only network.
+Docker requires a default-gateway network for host port publication; attaching
+another ordinary network would also grant outbound access. See the
+[Docker maintainer explanation](https://github.com/moby/moby/discussions/53256).
+
+Restoration now keeps its internal network and publishes no database ports.
+A temporary listener bound only to `127.0.0.1` relays PostgreSQL bytes through
+`docker exec` to the owned container's own loopback socket. Each connection
+rechecks the UUID ownership label; relay subprocesses receive no hosted database,
+Storage, or backup credentials. The listener and exact labelled container/network
+are closed after the test. Both the local synthetic drill and hosted-bundle
+restoration use this relay. CI now runs the complete encrypted local drill,
+including real database/file recovery, security checks, and image decoding,
+without hosted credentials.
+
+The local drill passed all 129 catalog assertions, three restored-access checks,
+six restored image files, and image decoding in 24 seconds, with cleanup verified.
+This is synthetic local evidence; a fresh protected hosted-bundle restoration
+still requires the environment review and a successful run before sign-off.
+
 The diagnostic capture implementation at `d3a1a7c` passed exact-commit push CI.
 Fresh manual launcher [42334862497](https://github.com/justinedupa2005/uc-marketplace/actions/runs/42334862497)
 then stopped at the dependency audit, **before any protected credential access
@@ -19,7 +42,7 @@ review](ci-dependency-security.md#current-evidence-refinement-2026-11-07).
 
 The existing five backup secrets and manual staging-operations review remain
 configured. Brevo and hosted monitoring credentials are still absent. No
-complete hosted capture or exact-bundle recovery has succeeded. Schedules,
+complete hosted exact-bundle recovery has succeeded. Schedules,
 alert delivery, app deployment and production remain unchanged/disabled.
 
 ## Execution checkpoint: 2026-11-01
@@ -123,8 +146,9 @@ the application's credentialed verification. That verification must match the
 pinned ID and format 2 before capture; a changed ID or format is rejected.
 `ops:plan` now reports `repositoryConfigured: true`, meaning the URL and ID are
 recorded, not that credentials, access or bucket privacy were checked remotely.
-No database or Storage backup has been created in this permanent repository by
-this implementation.
+Repository preparation alone did not create a database or Storage backup.
+The later capture reached restoration in run 42381225342; recovery remains
+uncertified until that exact-bundle restoration passes.
 The owner's existing `retentionApproved: true` setting is preserved, but its
 scope is explicitly **synthetic-only** under `dataScope` and
 `syntheticPolicyApproval`: no real student records, private conversations or
