@@ -7,6 +7,7 @@ import { verifyScheduledReadiness, cycle } from "../scripts/operations/cycle.mjs
 import { testAlert } from "../scripts/operations/alert-test.mjs";
 import { sendBrevoAlert } from "../scripts/operations/brevo.mjs";
 import { databaseFailureCode } from "../scripts/operations/diagnostics.mjs";
+import { fingerprintFormat } from "../scripts/operations/fingerprints.mjs";
 
 const run = "11111111-1111-4111-8111-111111111111", sha = "a".repeat(40);
 const ids = { database: "1".repeat(64), media: "2".repeat(64), verification: "3".repeat(64), bundle: "4".repeat(64) };
@@ -14,7 +15,7 @@ const snapshots = Object.entries(ids).map(([component, id]) => ({ id, hostname: 
   tags: ["ucm:staging", `component:${component}`, `run:${run}`] }));
 const manifest = { version: 1, complete: true, projectRef: registry.staging.supabaseProjectRef, runId: run, dataScope: "synthetic-only",
   snapshots: { database: ids.database, media: ids.media, verification: ids.verification },
-  storage: { inventory: [], objects: 0 }, database: { fingerprints: {}, roles: [] } };
+  storage: { inventory: [], objects: 0 }, database: { fingerprintFormat, fingerprints: {}, roles: [] } };
 const proof = () => ({ version: 1, status: "passed", environment: "staging", dataScope: "synthetic-only", repositoryId: policy.staging.repositoryId,
   sourceSha: sha, bundleId: ids.bundle, runId: run, databaseRestored: true, storageRestored: true, tablesMatched: true, imageDecoded: true,
   cleanup: true, catalogAssertions: 129, restoredAccessChecks: 3, objectsRestored: 15, completedAt: new Date().toISOString(), productionTouched: false });
