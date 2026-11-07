@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { reviewDependencyAudits, dependencyFailureCode, dependencyFailureDetails } from "./lib/dependency-review.mjs";
+import { reviewDependencyAudits, dependencyFailureCode, dependencyFailureDetails, requireCurrentDevelopmentPolicy } from "./lib/dependency-review.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 function audit(args) {
@@ -24,7 +24,9 @@ try {
   const production = audit(["--omit=dev"]);
   const lock = JSON.parse(readFileSync(path.join(root, "package-lock.json"), "utf8"));
   const policy = JSON.parse(readFileSync(new URL("./dependency-policy.json", import.meta.url), "utf8"));
-  const developmentPolicy = JSON.parse(readFileSync(new URL("./dependency-policy-minimatch.json", import.meta.url), "utf8"));
+  // Only the revised eight-node evidence profile is live. The original file is
+  // historical approval evidence, never a fallback or automatic renewal.
+  const developmentPolicy = requireCurrentDevelopmentPolicy(JSON.parse(readFileSync(new URL("./dependency-policy-minimatch-refined.json", import.meta.url), "utf8")));
   console.log(`DEPENDENCY_REVIEW_JSON:${JSON.stringify(reviewDependencyAudits(full, production, lock, policy, { developmentPolicy }))}`);
 } catch (error) {
   console.error(`Dependency security gate failed: ${dependencyFailureCode(error)}. Review current audits and the expiring development policy; private npm diagnostics were withheld.`);

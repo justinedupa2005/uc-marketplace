@@ -5,6 +5,23 @@ Production stays deployment-disabled and every hosted operations command current
 accepts only registered staging. Do not change the environment registry to bypass
 that restriction. No hosted database has been restored or reset.
 
+## Continuation checkpoint: 2026-11-07
+
+The diagnostic capture implementation at `d3a1a7c` passed exact-commit push CI.
+Fresh manual launcher [42334862497](https://github.com/justinedupa2005/uc-marketplace/actions/runs/42334862497)
+then stopped at the dependency audit, **before any protected credential access
+or backup**: upstream narrowed the same minimatch advisory on November 4.
+The audited eight-node development-only graph is a strict reduction of the
+original approved graph, with no production findings. Its separately pinned
+evidence profile keeps the **original November 8, 00:00 Asia/Manila expiry**;
+it does not renew approval or change dependencies. See the [current dependency
+review](ci-dependency-security.md#current-evidence-refinement-2026-11-07).
+
+The existing five backup secrets and manual staging-operations review remain
+configured. Brevo and hosted monitoring credentials are still absent. No
+complete hosted capture or exact-bundle recovery has succeeded. Schedules,
+alert delivery, app deployment and production remain unchanged/disabled.
+
 ## Execution checkpoint: 2026-11-01
 
 The protected `staging-operations` environment has all five backup secrets,

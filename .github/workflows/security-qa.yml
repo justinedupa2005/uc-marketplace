@@ -148,6 +148,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
       - run: npm ci
       - run: npm run ops:install-restic
+      - name: Recheck current dependency evidence after protected review
+        run: npm run qa:dependencies
       - name: Recheck exact staging source before accessing Backblaze credentials
         run: node scripts/operations/verify-source.mjs
         env:

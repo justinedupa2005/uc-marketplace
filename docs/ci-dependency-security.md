@@ -1,8 +1,50 @@
 # Step 2: CI and dependency security
 
+## Current evidence refinement: 2026-11-07
+
+The fresh staging recovery launcher
+[42334862497](https://github.com/justinedupa2005/uc-marketplace/actions/runs/42334862497)
+failed closed at `MINIMATCH_FINDINGS_CHANGED`, before the protected backup job.
+The [same GitHub advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249)
+was updated November 4: its affected range is now **>=7.0.0 <11.0.1**, not
+every version below 11.0.1. The fresh audit reports **8 moderate development
+findings and 0 production findings**. Root minimatch 3.1.5 and its older ESLint
+consumers are no longer reported. Nested minimatch **10.2.6** remains affected.
+
+`dependency-policy-minimatch-refined.json` pins the exact remaining eight
+development nodes, installed versions, reduced edges, revised advisory range,
+direct dependency classification and incompatible older-major Next-config
+remedy class. Every node/version/edge is a subset of the original November 1
+approval; the library independently pins the eight-node profile, not arbitrary
+subsets. The original 16-package file remains historical evidence, **never a live
+fallback**. Regression tests retain the historical profile, bind the refined
+artifact to the original approval ceiling and reject changed scope or evidence.
+
+This is a narrower evidence correction, **not new or renewed risk approval**.
+The original November 1 approval and **November 8, 2026 at 00:00 Asia/Manila**
+expiry (**November 7, 16:00 UTC**) are unchanged. A new date, wider range,
+additional or changed node/version/edge, production finding, compatible direct
+remedy, unknown profile or expired approval still fails. The gate reports
+`passed_with_reviewed_development_risk`, not a clean audit.
+
+No dependency or lockfile was changed. No compatible minimatch 10 backport was
+verified; the published patch starts at 11.0.1. A global major override can break
+older callable-default consumers, and the upstream [ESLint upgrade
+PR](https://github.com/eslint/eslint/pull/21492) is still under review. Any scoped
+major migration needs a separate compatibility review and affected tests; this
+evidence correction does not authorize it. Automatic renewal, app deployment,
+production operations and schedule activation remain excluded.
+
+Protected backup, monitoring, alert-test and synthetic Backblaze jobs re-run the
+live dependency gate **after their environment approval and lockfile install,
+before accessing any operation secret**. This also applies when an approval
+waits across the original exception deadline: an earlier green caller/source
+check cannot authorize expired or newly changed dependency risk. The final
+exact-source check remains in place after this fresh audit.
+
 ## Step 9 follow-up: 2026-11-01
 
-The October clean audit below is historical. The first Step 9 staging PR run
+This November 1 profile and the October clean audit below are historical. The first Step 9 staging PR run
 failed closed on newly reported minimatch advisory
 [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249): **16 moderate
 development-tooling findings**, all in the lint dependency chain. No affected

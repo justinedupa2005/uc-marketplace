@@ -4,8 +4,27 @@ const severities = ["info", "low", "moderate", "high", "critical"];
 const minimatchPackages = ["@eslint-community/eslint-utils", "@eslint/config-array", "@eslint/eslintrc", "@next/eslint-plugin-next",
   "@typescript-eslint/eslint-plugin", "@typescript-eslint/parser", "@typescript-eslint/type-utils", "@typescript-eslint/typescript-estree",
   "@typescript-eslint/utils", "eslint", "eslint-config-next", "eslint-plugin-import", "eslint-plugin-jsx-a11y", "eslint-plugin-react", "minimatch", "typescript-eslint"];
+const refinedMinimatchPackages = ["@typescript-eslint/eslint-plugin", "@typescript-eslint/parser", "@typescript-eslint/type-utils",
+  "@typescript-eslint/typescript-estree", "@typescript-eslint/utils", "eslint-config-next", "minimatch", "typescript-eslint"];
+const refinedMinimatchEdges = {
+  "@typescript-eslint/eslint-plugin": ["@typescript-eslint/parser", "@typescript-eslint/type-utils", "@typescript-eslint/utils"],
+  "@typescript-eslint/parser": ["@typescript-eslint/typescript-estree"],
+  "@typescript-eslint/type-utils": ["@typescript-eslint/typescript-estree", "@typescript-eslint/utils"],
+  "@typescript-eslint/typescript-estree": ["minimatch"],
+  "@typescript-eslint/utils": ["@typescript-eslint/typescript-estree"],
+  "eslint-config-next": ["typescript-eslint"],
+  "minimatch": ["https://github.com/advisories/GHSA-g3hv-75wg-m249"],
+  "typescript-eslint": ["@typescript-eslint/eslint-plugin", "@typescript-eslint/parser", "@typescript-eslint/typescript-estree", "@typescript-eslint/utils"],
+};
 const reviewCodes = new Set(["AUDIT_EVIDENCE_INVALID", "PRODUCTION_FINDINGS", "MINIMATCH_APPROVAL_INVALID_OR_EXPIRED", "MINIMATCH_FINDINGS_CHANGED", "MINIMATCH_NODES_OR_SEVERITY_CHANGED", "MINIMATCH_INSTALL_CHANGED", "MINIMATCH_ADVISORY_CHANGED", "MINIMATCH_EDGES_CHANGED", "MINIMATCH_DIRECT_DEPENDENCY_CHANGED", "MINIMATCH_FIX_CHANGED"]);
 const failure = (code = "AUDIT_EVIDENCE_INVALID") => Object.assign(new Error("Dependency review failed: unreviewed, expired, production, or invalid audit evidence. No raw diagnostics were printed."), { reviewCode: reviewCodes.has(code) ? code : "AUDIT_EVIDENCE_INVALID" });
+
+export function requireCurrentDevelopmentPolicy(policy) {
+  // The public CLI must never fall back to the historical 16-finding profile,
+  // even if the current JSON is accidentally replaced with that entire file.
+  if (policy?.evidenceProfile !== "github-2026-11-04-refinement") throw failure("MINIMATCH_APPROVAL_INVALID_OR_EXPIRED");
+  return policy;
+}
 
 export function dependencyFailureCode(error) { return reviewCodes.has(error?.reviewCode) ? error.reviewCode : "AUDIT_COMMAND_OR_NETWORK_FAILED"; }
 export function dependencyFailureDetails(error) {
@@ -81,7 +100,11 @@ function reviewMinimatch(full, lock, policy, now) {
   // This is the single owner-approved seven-day exception, not a general
   // severity threshold or a renewable allowlist. Historical braces logic above
   // remains separately testable; the current CLI selects only this policy.
-  const expected = minimatchPackages;
+  const refined = policy?.evidenceProfile === "github-2026-11-04-refinement";
+  if ((policy?.evidenceProfile !== undefined && !refined) || (refined && (policy.evidenceReviewedOn !== "2026-11-07"
+    || now.getTime() < Date.parse("2026-11-07T00:00:00+08:00")))) throw failure("MINIMATCH_APPROVAL_INVALID_OR_EXPIRED");
+  const expected = refined ? refinedMinimatchPackages : minimatchPackages;
+  const advisoryRange = refined ? ">=7.0.0 <11.0.1" : "<11.0.1";
   const reviewed = Date.parse(`${policy?.reviewedOn}T00:00:00+08:00`), expiry = Date.parse(`${policy?.expiresOn}T00:00:00+08:00`);
   if (policy?.version !== 1 || policy.approved !== true || policy.approvedBy !== "justinedupa2005" || policy.scope !== "development-only"
     || policy.reviewedOn !== "2026-11-01" || policy.expiresOn !== "2026-11-08" || policy.timezone !== "Asia/Manila"
@@ -90,6 +113,15 @@ function reviewMinimatch(full, lock, policy, now) {
   if (full.size !== expected.length || !isDeepStrictEqual(Object.keys(policy.packages ?? {}).sort(), [...expected].sort())) throw failure("MINIMATCH_FINDINGS_CHANGED");
   for (const name of expected) {
     const value = full.get(name), approved = policy.packages[name];
+    if (refined) {
+      // This evidence correction may only remove previously approved exposure.
+      // Pin all eight reviewed nodes/versions/edges independently of the JSON:
+      // neither arbitrary subsets nor a coordinated policy/report expansion pass.
+      const node = name === "minimatch" ? "node_modules/@typescript-eslint/typescript-estree/node_modules/minimatch" : `node_modules/${name}`;
+      const version = name === "minimatch" ? "10.2.6" : name === "eslint-config-next" ? "16.4.3" : "8.68.0";
+      if (!isDeepStrictEqual(approved?.nodes, { [node]: version })) throw failure("MINIMATCH_INSTALL_CHANGED");
+      if (!Array.isArray(approved.via) || !isDeepStrictEqual([...approved.via].sort(), [...refinedMinimatchEdges[name]].sort())) throw failure("MINIMATCH_EDGES_CHANGED");
+    }
     if (!value || value.severity !== "moderate" || !approved?.nodes || !Array.isArray(approved.via)
       || !isDeepStrictEqual([...value.nodes].sort(), Object.keys(approved.nodes).sort())) throw failure("MINIMATCH_NODES_OR_SEVERITY_CHANGED");
     for (const node of value.nodes) {
@@ -102,14 +134,14 @@ function reviewMinimatch(full, lock, policy, now) {
         return item;
       }
       if (name !== "minimatch" || item?.name !== "minimatch" || item.url !== policy.advisory
-        || item.severity !== "moderate" || item.range !== "<11.0.1") throw failure("MINIMATCH_ADVISORY_CHANGED");
+        || item.severity !== "moderate" || item.range !== advisoryRange) throw failure("MINIMATCH_ADVISORY_CHANGED");
       return item.url;
     });
     if (!isDeepStrictEqual(via.sort(), [...approved.via].sort())) throw failure("MINIMATCH_EDGES_CHANGED");
     // Arborist propagates fixAvailable through transitive via/effects cycles;
     // traversal/cache order changes those suggestions without changing risk.
     // Bind the two actual project-level remedy classes, not indirect display
-    // metadata. All 16 packages' paths, versions, edges and advisory stay bound.
+    // metadata. Every selected profile's paths, versions, edges and advisory stay bound.
     const direct = name === "eslint" || name === "eslint-config-next";
     if (value.isDirect !== direct) throw failure("MINIMATCH_DIRECT_DEPENDENCY_CHANGED");
     if (!direct) continue;
