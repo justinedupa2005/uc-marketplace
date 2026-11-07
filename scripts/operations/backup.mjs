@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { connect, databaseManifest, inventorySql, validateExportedSnapshot } from "./database.mjs";
@@ -15,7 +15,8 @@ export async function prepareCa(env) {
   const directory = path.join(root, ".qa", "operations");
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const filename = path.join(directory, "provider-ca.crt");
-  await writeFile(filename, pem, { mode: 0o600 });
+  await writeFile(filename, pem, { mode: 0o644 });
+  await chmod(filename, 0o644);
   return { ...env, OPS_CA_FILE: filename };
 }
 
