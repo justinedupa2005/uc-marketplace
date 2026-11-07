@@ -106,6 +106,8 @@ jobs:
       - name: Install isolated image-decoding test browser
         if: inputs.operation == 'capture-restore' || github.event.schedule == '17 18 * * *'
         run: npx playwright install --with-deps chromium
+      - name: Recheck current dependency evidence after protected review
+        run: npm run qa:dependencies
       - name: Recheck exact source immediately before accessing backup credentials
         run: node scripts/operations/verify-source.mjs
         env:
@@ -171,6 +173,8 @@ jobs:
       - run: npm run ops:install-restic
       - name: Install the pinned operator-only Vercel CLI before any credentials
         run: npm install --prefix .qa/operations/vercel --no-save --ignore-scripts --no-audit --no-fund vercel@50.14.0
+      - name: Recheck current dependency evidence after protected review
+        run: npm run qa:dependencies
       - name: Recheck exact source before accessing monitoring credentials
         run: node scripts/operations/verify-source.mjs
         env:
@@ -221,6 +225,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
       - run: npm ci
+      - name: Recheck current dependency evidence after protected review
+        run: npm run qa:dependencies
       - name: Recheck staging before the single explicit Brevo delivery test
         run: node scripts/operations/verify-source.mjs
         env:

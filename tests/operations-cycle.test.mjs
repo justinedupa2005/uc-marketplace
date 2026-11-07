@@ -212,3 +212,23 @@ test("the explicit Brevo delivery job never releases database, vault or hosting 
   assert.match(job, /npm run ops:alerts:test/);
   assert.deepEqual([...job.matchAll(/\$\{\{ secrets\.([A-Z_]+) \}\}/g)].map(match => match[1]), ["OPS_BREVO_API_KEY"]);
 });
+
+test("protected operation jobs re-audit after review and installation, before releasing step-only credentials", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/backups-and-restore.yml", import.meta.url), "utf8");
+  const qa = await readFile(new URL("../.github/workflows/security-qa.yml", import.meta.url), "utf8");
+  const sections = [
+    workflow.slice(workflow.indexOf("\n  encrypted-backup:"), workflow.indexOf("\n  monitoring:")),
+    workflow.slice(workflow.indexOf("\n  monitoring:"), workflow.indexOf("\n  alert-delivery:")),
+    workflow.slice(workflow.indexOf("\n  alert-delivery:")),
+    qa.slice(qa.indexOf("\n  synthetic-backblaze:")),
+  ];
+  for (const job of sections) {
+    assert.match(job, /environment: staging(?:-operations)?/);
+    const install = job.indexOf("run: npm ci"), audit = job.indexOf("run: npm run qa:dependencies");
+    const lastSource = job.lastIndexOf("run: node scripts/operations/verify-source.mjs");
+    const credentials = job.indexOf("${{ secrets.");
+    assert.ok(install >= 0 && audit > install && lastSource > audit && credentials > lastSource);
+    assert.equal((job.match(/run: npm run qa:dependencies/g) ?? []).length, 1);
+    assert.doesNotMatch(job, /continue-on-error: true/);
+  }
+});

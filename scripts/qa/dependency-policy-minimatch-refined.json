@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "approved": true,
+  "approvedBy": "justinedupa2005",
+  "scope": "development-only",
+  "reviewedOn": "2026-11-01",
+  "expiresOn": "2026-11-08",
+  "timezone": "Asia/Manila",
+  "evidenceProfile": "github-2026-11-04-refinement",
+  "evidenceReviewedOn": "2026-11-07",
+  "advisory": "https://github.com/advisories/GHSA-g3hv-75wg-m249",
+  "severity": "moderate",
+  "reason": "The original November 1 seven-day approval is unchanged, not renewed. GitHub narrowed this same advisory on November 4 to >=7.0.0 <11.0.1. These eight affected development nodes and edges are a strict subset of the original reviewed 16-package/18-node profile. Root minimatch 3.1.5 and its lint consumers are no longer reported; nested minimatch 10.2.6 remains affected. No compatible minimatch 10 backport is published, and npm still proposes an incompatible Next lint config downgrade. No dependency upgrade, downgrade or override is applied.",
+  "mitigation": "No student input supplies lint patterns. Credential-free CI uses disposable bounded runners and read-only tokens. Privileged operations install the unchanged reviewed lockfile before releasing step-only credentials. Pin exactly these eight nodes, versions, reduced edges, the revised advisory range and one direct remedy class. Reject every production finding, other advisory, changed or additional affected node/version/edge, compatible remedy or expiry. The historical 16-package policy is not a fallback. The original approval still expires 2026-11-08 00:00 Asia/Manila; never extend or renew automatically.",
+  "packages": {
+    "@typescript-eslint/eslint-plugin": { "nodes": { "node_modules/@typescript-eslint/eslint-plugin": "8.68.0" }, "via": ["@typescript-eslint/parser", "@typescript-eslint/type-utils", "@typescript-eslint/utils"] },
+    "@typescript-eslint/parser": { "nodes": { "node_modules/@typescript-eslint/parser": "8.68.0" }, "via": ["@typescript-eslint/typescript-estree"] },
+    "@typescript-eslint/type-utils": { "nodes": { "node_modules/@typescript-eslint/type-utils": "8.68.0" }, "via": ["@typescript-eslint/typescript-estree", "@typescript-eslint/utils"] },
+    "@typescript-eslint/typescript-estree": { "nodes": { "node_modules/@typescript-eslint/typescript-estree": "8.68.0" }, "via": ["minimatch"] },
+    "@typescript-eslint/utils": { "nodes": { "node_modules/@typescript-eslint/utils": "8.68.0" }, "via": ["@typescript-eslint/typescript-estree"] },
+    "eslint-config-next": { "nodes": { "node_modules/eslint-config-next": "16.4.3" }, "via": ["typescript-eslint"], "fix": "next-config-downgrade" },
+    "minimatch": { "nodes": { "node_modules/@typescript-eslint/typescript-estree/node_modules/minimatch": "10.2.6" }, "via": ["https://github.com/advisories/GHSA-g3hv-75wg-m249"] },
+    "typescript-eslint": { "nodes": { "node_modules/typescript-eslint": "8.68.0" }, "via": ["@typescript-eslint/eslint-plugin", "@typescript-eslint/parser", "@typescript-eslint/typescript-estree", "@typescript-eslint/utils"] }
+  }
+}
