@@ -173,9 +173,22 @@ test("manual vault operations are independent of daily scheduling and retain sta
   assert.match(job, /OPS_DATA_SCOPE: synthetic-only/); assert.match(job, /npm run ops:cycle/);
   const restore = await readFile(new URL("../scripts/operations/restore.mjs", import.meta.url), "utf8");
   assert.ok(!restore.includes("--clean") && !restore.includes("env.OPS_DATABASE_URL"));
-  assert.match(restore, /127\.0\.0\.1::5432/); assert.match(restore, /assertDrillContainer\(containerEnv/);
+  assert.doesNotMatch(restore, /--publish/); assert.match(restore, /openRestoreTunnel\(containerEnv\)/);
+  assert.match(restore, /assertDrillContainer\(containerEnv/);
   assert.match(restore, /"network", "create", "--internal"/);
   assert.match(restore, /networkInfo\[0\]\.Labels\["ucmarketplace.restore-drill"\]/);
+  const drill = await readFile(new URL("../scripts/operations/drill.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(drill, /--publish/); assert.match(drill, /openRestoreTunnel\(privateEnv\)/);
+  assert.match(drill, /"network", "create", "--internal"/);
+});
+
+test("credential-free CI runs a complete encrypted synthetic restore through the same internal-network relay", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/security-qa.yml", import.meta.url), "utf8");
+  const local = workflow.slice(workflow.indexOf("\n  local-security:"), workflow.indexOf("\n  staging-operations:"));
+  assert.ok(local.indexOf("npx playwright install") < local.indexOf("run: npm run ops:drill"));
+  assert.ok(local.indexOf("run: npm run ops:install-restic") < local.indexOf("run: npm run ops:drill"));
+  assert.match(local, /OPS_RESTIC_BINARY: \$\{\{ github\.workspace \}\}\/\.qa\/tools\/restic-0\.19\.1\/restic/);
+  assert.doesNotMatch(local, /\$\{\{ secrets\.|environment: staging/);
 });
 
 test("the registered QA workflow explicitly passes only declared operation secret names after CI, without broad inheritance", async () => {
