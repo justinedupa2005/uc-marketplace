@@ -17,6 +17,7 @@ import { readJsonSnapshot, validateBundle } from "./bundle.mjs";
 import { registry, validateBackupPolicy, snapshotId } from "./policy.mjs";
 import { resticClient } from "./restic.mjs";
 import { openRestoreTunnel } from "./restore-tunnel.mjs";
+import { verifyTableFingerprints } from "./fingerprints.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -93,9 +94,11 @@ export async function restoreBundle(env, bundleId, sourceSha) {
       { env: containerEnv, input: archive, postgresRestoreDiagnostics: true });
     evidence.databaseRestored = true;
     phase = "restore-fingerprints";
-    await client.query(publicationRestoreSql(manifest.database.publication));
-    assert.deepEqual(await tableFingerprints(client), manifest.database.fingerprints); evidence.tablesMatched = true;
-    assert.equal(inventoryDigest((await client.query(inventorySql)).rows), manifest.inventorySha256);
+    try { await client.query(publicationRestoreSql(manifest.database.publication)); }
+    catch { throw Object.assign(new Error("Restored publication verification failed."), { operationCodes: ["RESTORE_PUBLICATION_FAILED"] }); }
+    verifyTableFingerprints(await tableFingerprints(client), manifest.database.fingerprints); evidence.tablesMatched = true;
+    assert.ok(inventoryDigest((await client.query(inventorySql)).rows) === manifest.inventorySha256,
+      Object.assign(new Error("Restored Storage metadata differs from the captured inventory."), { operationCodes: ["RESTORE_STORAGE_INVENTORY_MISMATCH"] }));
     phase = "restore-security";
     for (const filename of NATIVE_CATALOG_CHECKS) {
       const rows = (await executeSqlScript({ exec: async sql => {

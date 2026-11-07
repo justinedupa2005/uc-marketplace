@@ -7,10 +7,12 @@ import { command, controlledEnvironment } from "./process.mjs";
 import path from "node:path";
 import { assertLocalDockerEndpoint } from "../qa/lib/local-stack.mjs";
 import { databaseFailureCode } from "./diagnostics.mjs";
+import { fingerprintFormat, fingerprintSettingsSql } from "./fingerprints.mjs";
 
 export const schemas = ["public", "private", "auth", "storage", "supabase_migrations", "extensions"];
 export const inventorySql = `select bucket_id,name,owner_id,metadata,updated_at::text,
-  to_jsonb(o)->>'version' as version from storage.objects o order by bucket_id,name`;
+  to_jsonb(o)->>'version' as version from storage.objects o
+  order by bucket_id collate pg_catalog."C",name collate pg_catalog."C"`;
 
 export async function connect(env) {
   const selected = validateTarget(env), url = new URL(env.OPS_DATABASE_URL);
@@ -27,7 +29,7 @@ export async function connect(env) {
   await client.connect();
   try {
     await client.query("set default_transaction_read_only=on");
-    await client.query("set timezone='UTC'");
+    await client.query(fingerprintSettingsSql);
     return { client, pgEnv: { PGHOST: options.host, PGPORT: "5432", PGDATABASE: options.database, PGUSER: options.user,
       PGPASSWORD: options.password, PGSSLMODE: "verify-full", PGSSLROOTCERT: env.OPS_CA_FILE, PGCONNECT_TIMEOUT: "15", PGOPTIONS: "-c default_transaction_read_only=on" } };
   } catch { await client.end(); throw new Error("Read-only database connection failed."); }
@@ -66,16 +68,19 @@ export async function databaseManifest(client) {
   const roles = (await client.query(`select rolname as name,rolbypassrls as bypassrls from pg_roles
     where rolname not like 'pg_%' and rolname<>'postgres' order by rolname`)).rows;
   assert.ok(roles.length < 100 && roles.every(role => /^[a-z][a-z0-9_]{0,62}$/.test(role.name) && typeof role.bypassrls === "boolean"));
-  return { format: "postgres-custom", schemas, serverVersion, tables: counts, roles, publication: publication[0], fingerprints: await tableFingerprints(client) };
+  return { format: "postgres-custom", fingerprintFormat, schemas, serverVersion, tables: counts, roles, publication: publication[0], fingerprints: await tableFingerprints(client) };
 }
 
 export async function tableFingerprints(client) {
+  // JSON text rendering and row order must not depend on the source/target
+  // session defaults or ICU versus libc collation providers.
+  await client.query(fingerprintSettingsSql);
   const names = (await client.query("select schemaname,tablename from pg_tables where schemaname=any($1) order by 1,2", [schemas])).rows;
   const quote = value => `"${value.replaceAll('"', '""')}"`;
   const result = {};
   for (const row of names) {
     result[`${row.schemaname}.${row.tablename}`] = (await client.query(`select count(*)::text as count,
-      md5(coalesce(string_agg(to_jsonb(t)::text,E'\\n' order by to_jsonb(t)::text),'')) as fingerprint
+      md5(coalesce(string_agg(to_jsonb(t)::text,E'\\n' order by to_jsonb(t)::text collate pg_catalog."C"),'')) as fingerprint
       from ${quote(row.schemaname)}.${quote(row.tablename)} t`)).rows[0];
   }
   return result;

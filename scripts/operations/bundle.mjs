@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { registry, runId, snapshotId } from "./policy.mjs";
+import { fingerprintFormat } from "./fingerprints.mjs";
 
 export async function readJsonSnapshot(storage, id, component, maximum = 16000000) {
   assert.match(id, snapshotId);
@@ -27,6 +28,8 @@ export function validateBundle(manifest, id, snapshots) {
   assert.ok(Array.isArray(manifest.storage?.inventory));
   assert.equal(manifest.storage.inventory.length, manifest.storage.objects);
   assert.ok(manifest.database?.fingerprints && Array.isArray(manifest.database.roles));
+  assert.ok(manifest.database.fingerprintFormat === fingerprintFormat,
+    Object.assign(new Error("Capture a fresh bundle with the supported comparison format."), { operationCodes: ["RESTORE_FINGERPRINT_FORMAT_UNSUPPORTED"] }));
   return manifest;
 }
 

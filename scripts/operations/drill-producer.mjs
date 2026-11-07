@@ -25,7 +25,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     await assertDrillContainer(env);
     const [component] = process.argv.slice(2);
     if (component === "database") {
-      await command("docker", ["exec", env.OPS_DRILL_CONTAINER, "pg_dump", "--username=postgres", "--dbname=postgres", "--format=custom",
+      await command("docker", ["exec", env.OPS_DRILL_CONTAINER, "pg_dump", "--username=postgres", "--dbname=source_drill", "--format=custom",
         ...schemas.map(schema => `--schema=${schema}`)], { output: chunk => writeStream(process.stdout, chunk) });
     } else if (["media", "verification"].includes(component)) {
       const objects = JSON.parse(env.OPS_DRILL_OBJECTS);

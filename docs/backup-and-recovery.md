@@ -7,6 +7,30 @@ that restriction. No hosted database has been restored or reset.
 
 ## Continuation checkpoint: 2026-11-07
 
+The subsequent protected run reached `restore-fingerprints`: container startup
+and archive restoration succeeded. Read-only staging metadata identified an ICU
+`en-US` database, while the isolated PostgreSQL target uses libc. Comparing the
+same staging rows under those two sort orders changed the old checksums for one
+Auth table and one Storage table; no row contents or hashes were printed. A
+local reproduction also produced different checksums for identical rows.
+
+New captures record `postgres-jsonb-c-v1` as their fingerprint format. Both sides
+use explicit `pg_catalog."C"` ordering and fixed date, timezone, interval, float,
+and bytea rendering. Storage inventories use the same explicit ordering. Table
+sets, row counts, data hashes, and inventory hashes remain mandatory. Legacy
+unversioned bundles are retained unchanged; the automated verifier requires a
+fresh capture instead of relabelling their checksums. Fixed error codes now
+distinguish publication, table-set, row-count, row-data, and Storage inventory
+failures without exposing records.
+
+The complete synthetic drill now captures an ICU source and restores into a
+libc target, includes precision-sensitive values and mixed-case filenames, and
+verifies that deliberate data corruption is rejected. The local run restored
+nine files, matched the Storage inventory, passed all 129 catalog assertions
+and three access checks, decoded a restored image, and verified cleanup in
+47 seconds. CI executes this same cross-locale drill. Hosted recovery still
+requires a fresh protected run before operational sign-off.
+
 The protected run [42381225342](https://github.com/justinedupa2005/uc-marketplace/actions/runs/42381225342)
 on `99e064c` passed capture and failed at `restore-container`. The earlier CA
 readability fix is working. A local reproduction confirmed that PostgreSQL was

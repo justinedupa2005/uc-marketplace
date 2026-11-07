@@ -13,25 +13,15 @@ import { executeSqlScript } from "../qa/lib/database-harness.mjs";
 import { assertLocalDockerEndpoint } from "../qa/lib/local-stack.mjs";
 import { command, controlledEnvironment } from "./process.mjs";
 import { resticClient } from "./restic.mjs";
-import { inventorySql, schemas, databaseManifest, publicationRestoreSql } from "./database.mjs";
-import { decodeStoragePack, writeStream } from "./storage.mjs";
+import { inventorySql, schemas, databaseManifest, publicationRestoreSql, tableFingerprints } from "./database.mjs";
+import { fingerprintFormat, verifyTableFingerprints } from "./fingerprints.mjs";
+import { decodeStoragePack, inventoryDigest, writeStream } from "./storage.mjs";
 import { assertDrillContainer } from "./drill-producer.mjs";
 import { openRestoreTunnel } from "./restore-tunnel.mjs";
 import { syntheticPng, syntheticProjectRef, persistentSyntheticWorkflow } from "./drill-fixtures.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const hash = value => createHash("sha256").update(value).digest("hex");
-
-async function fingerprints(client) {
-  const names = (await client.query("select schemaname,tablename from pg_tables where schemaname=any($1) order by 1,2", [schemas])).rows;
-  const result = {};
-  const quote = text => `"${text.replaceAll('"', '""')}"`;
-  for (const row of names) {
-    const query = `select count(*)::text as count,md5(coalesce(string_agg(to_jsonb(t)::text,E'\\n' order by to_jsonb(t)::text),'')) as fingerprint from ${quote(row.schemaname)}.${quote(row.tablename)} t`;
-    result[`${row.schemaname}.${row.tablename}`] = (await client.query(query)).rows[0];
-  }
-  return result;
-}
 
 export async function drill(env = process.env) {
   controlledEnvironment(env);
@@ -80,6 +70,12 @@ export async function drill(env = process.env) {
       try { await client.connect(); source = client; break; } catch { await client.end(); await new Promise(resolve => setTimeout(resolve, 500)); }
     }
     assert.ok(source, "Disposable database startup failed.");
+    // Match Supabase's ICU source and the plain PostgreSQL/libc restore target.
+    await source.query("create database source_drill template=template0 locale_provider=icu icu_locale='en-US'");
+    await source.end();
+    source = new pg.Client({ ...options, database: "source_drill" }); await source.connect();
+    assert.equal((await source.query("select datlocprovider from pg_database where datname=current_database()")).rows[0].datlocprovider, "i");
+    await source.query("set extra_float_digits=0");
     evidence.phase = "bootstrap";
     await source.query(DATABASE_BOOTSTRAP);
     evidence.phase = "migrations";
@@ -93,15 +89,23 @@ export async function drill(env = process.env) {
     const seller = (await source.query("select seller_id from public.listings limit 1")).rows[0].seller_id;
     const avatar = `${seller}/${randomUUID()}.png`;
     await source.query("insert into storage.objects(bucket_id,name,owner_id,metadata) values('avatars',$1,$2,jsonb_build_object('size',$3::int,'mimetype','image/png'))", [avatar, seller, syntheticPng.length]);
+    for (const filename of ["Aa.png", "a-a.png", "aa.png"]) {
+      await source.query("insert into storage.objects(bucket_id,name,owner_id,metadata) values('avatars',$1,$2,jsonb_build_object('size',$3::int,'mimetype','image/png'))",
+        [`${seller}/${filename}`, seller, syntheticPng.length]);
+    }
     await source.query("update public.profiles set avatar_path=$1 where id=$2", [avatar, seller]);
-    const before = await fingerprints(source), objects = (await source.query(inventorySql)).rows;
+    await source.query(`create table extensions.backup_locale_fixture(label text,measurement double precision,happened_at timestamptz,duration interval,bytes bytea);
+      insert into extensions.backup_locale_fixture select label,1.2345678901234567::double precision,'2026-11-07T00:00:00Z'::timestamptz,
+        interval '1 day 1 hour',decode('00ff','hex') from unnest(array['a-b','ab','Z','z','10','2','A','a']) label`);
+    const before = await tableFingerprints(source), objects = (await source.query(inventorySql)).rows;
     assert.ok(objects.length >= 5 && objects.every(object => object.name.includes("/")));
     privateEnv.OPS_DRILL_OBJECTS = JSON.stringify(objects);
     evidence.phase = "capture";
     const producer = component => [process.execPath, fileURLToPath(new URL("./drill-producer.mjs", import.meta.url)), component];
     const snapshots = {};
     for (const component of ["database", "media", "verification"]) snapshots[component] = await resticClient(privateEnv).backup(component, id, producer(component));
-    privateEnv.OPS_DRILL_MANIFEST = JSON.stringify({ version: 1, complete: true, projectRef: syntheticProjectRef, runId: id, snapshots, database: await databaseManifest(source) });
+    privateEnv.OPS_DRILL_MANIFEST = JSON.stringify({ version: 1, complete: true, projectRef: syntheticProjectRef, runId: id, snapshots,
+      inventorySha256: inventoryDigest(objects), database: await databaseManifest(source) });
     snapshots.bundle = await resticClient(privateEnv).backup("bundle", id, producer("bundle"));
     await restic.check(true);
     const archiveChunks = [];
@@ -114,6 +118,8 @@ export async function drill(env = process.env) {
     evidence.phase = "database-restore";
     await source.query("create database restored_drill");
     target = new pg.Client({ ...options, database: "restored_drill" }); await target.connect();
+    assert.equal((await target.query("select datlocprovider from pg_database where datname=current_database()")).rows[0].datlocprovider, "c");
+    evidence.crossLocaleRecovery = true;
     await assertDrillContainer(privateEnv);
     assert.equal((await target.query("select current_database() as name")).rows[0].name, "restored_drill");
     const existing = (await target.query("select nspname from pg_namespace where nspname=any($1) order by nspname", [schemas])).rows;
@@ -130,7 +136,18 @@ export async function drill(env = process.env) {
     const manifest = JSON.parse(Buffer.concat(manifestChunks).toString());
     assert.equal(manifest.projectRef, syntheticProjectRef); assert.equal(manifest.runId, id);
     await target.query(publicationRestoreSql(manifest.database.publication));
-    assert.deepEqual(await fingerprints(target), before); evidence.tablesMatched = true;
+    assert.equal(manifest.database.fingerprintFormat, fingerprintFormat);
+    verifyTableFingerprints(await tableFingerprints(target), before); evidence.tablesMatched = true;
+    assert.equal(inventoryDigest((await target.query(inventorySql)).rows), manifest.inventorySha256);
+    evidence.inventoryMatched = true;
+    // Reject real corruption as well as proving identical cross-locale rows pass.
+    await target.query("begin");
+    try {
+      await target.query("update extensions.backup_locale_fixture set measurement=measurement+1 where label='a-b'");
+      const changed = await tableFingerprints(target);
+      assert.throws(() => verifyTableFingerprints(changed, before), error => error.operationCodes?.includes("RESTORE_TABLE_DATA_MISMATCH"));
+      evidence.corruptionDetected = true;
+    } finally { await target.query("rollback"); }
     evidence.phase = "security";
     for (const filename of NATIVE_CATALOG_CHECKS) {
       const rows = (await executeSqlScript({ exec: async query => {
