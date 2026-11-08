@@ -1,5 +1,33 @@
 # Monitoring and incident response (Step 9)
 
+## Activation checkpoint: 2026-11-08
+
+Backup recovery now has a passing hosted exact-bundle receipt; see the backup
+guide. Monitoring and alerts are **still disabled**, independently of backup
+schedule preparation. The owner requested activation only after delivery testing.
+Add these new, dedicated credentials only as protected `staging-operations`
+environment secrets, never in browser configuration or repository-level secrets:
+
+- `OPS_MANAGEMENT_TOKEN`: staging-only project/log telemetry read permissions;
+  do not reuse the database-write migration token or a broad personal token.
+- `OPS_VERCEL_TOKEN`: least-privilege access to the registered staging deployment
+  and runtime logs. If the account cannot restrict it appropriately, stop and
+  review an alternative instead of silently storing broad production access.
+- `OPS_BREVO_API_KEY`: transactional API key, not an SMTP password, for the
+  approved sender and recipient `ucmarketplace.security@gmail.com`.
+
+Run `monitor` without notification after current staging CI, then the separate
+one-message `alert-test` behind owner review. Confirm inbox/spam arrival with the
+recipient; HTTP 201 alone is insufficient. Only then enable monitoring policy and
+repository gates `STAGING_MONITORING_ENABLED`, `STAGING_ALERTS_ENABLED`, and
+`STAGING_ALERT_DELIVERY_CONFIRMED`. Preserve required reviews and independently
+review deduplication/alert cooldown before recurring notification activation.
+The credential-free main scheduler queues only reviewed staging jobs, and skips
+additional dispatches while a manual staging workflow is still outstanding.
+Do not describe this attended schedule as continuous unattended monitoring.
+
+The remainder of this guide includes historical preparation notes.
+
 Implementation is available; continuous monitoring and notifications are **not
 activated** until the owner approves their destination, operators and deployment.
 Production remains blocked. No test email or incident notification has been sent.

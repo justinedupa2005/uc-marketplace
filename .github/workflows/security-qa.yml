@@ -22,6 +22,16 @@ on:
         default: none
         type: choice
         options: [none, verify, capture-restore, check, monitor, alert-test]
+      staging_schedule_run_id:
+        description: Internal provenance from the credential-free default-branch scheduler
+        type: string
+        default: ""
+        required: false
+      staging_schedule_cron:
+        description: Internal registered cron expression; checked before credentials
+        type: string
+        default: ""
+        required: false
 
 permissions:
   contents: read
@@ -93,6 +103,8 @@ jobs:
     uses: ./.github/workflows/backups-and-restore.yml
     with:
       operation: ${{ inputs.staging_operation }}
+      schedule_run_id: ${{ inputs.staging_schedule_run_id }}
+      schedule_cron: ${{ inputs.staging_schedule_cron }}
     secrets:
       OPS_DATABASE_URL: ${{ secrets.OPS_DATABASE_URL }}
       OPS_SERVICE_ROLE_KEY: ${{ secrets.OPS_SERVICE_ROLE_KEY }}

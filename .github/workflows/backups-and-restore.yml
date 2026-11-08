@@ -7,6 +7,14 @@ on:
         description: Explicit protected operation from the staging QA launcher
         type: string
         required: true
+      schedule_run_id:
+        type: string
+        default: ""
+        required: false
+      schedule_cron:
+        type: string
+        default: ""
+        required: false
     secrets:
       OPS_DATABASE_URL:
         required: true
@@ -38,10 +46,17 @@ on:
         options: [plan, verify, capture-restore, check, monitor, alert-test, storage-drill, restore-drill]
         default: plan
         required: true
-  schedule:
-    - cron: "17 18 * * *" # 02:17 Asia/Manila; explicit owner activation required
-    - cron: "47 18 * * 0" # Weekly full integrity read, not a restore claim
-    - cron: "*/15 * * * *" # Disabled until monitoring credentials/channel are reviewed
+
+# Cron lives only in the credential-free default-branch dispatcher. Protected
+# jobs run on staging, preserving the staging-only environment branch policy.
+env:
+  OPS_OPERATION: ${{ inputs.operation }}
+  OPS_SCHEDULE_RUN_ID: ${{ inputs.schedule_run_id }}
+  OPS_SCHEDULE_CRON: ${{ inputs.schedule_cron }}
+  STAGING_BACKUPS_ENABLED: ${{ vars.STAGING_BACKUPS_ENABLED }}
+  STAGING_MONITORING_ENABLED: ${{ vars.STAGING_MONITORING_ENABLED }}
+  STAGING_ALERTS_ENABLED: ${{ vars.STAGING_ALERTS_ENABLED }}
+  STAGING_ALERT_DELIVERY_CONFIRMED: ${{ vars.STAGING_ALERT_DELIVERY_CONFIRMED }}
 
 permissions:
   contents: read
@@ -85,7 +100,7 @@ jobs:
       # No hosted credentials or artifact uploads in synthetic drill jobs.
 
   encrypted-backup:
-    if: (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging' && (inputs.operation == 'verify' || inputs.operation == 'capture-restore' || inputs.operation == 'check')) || (github.event_name == 'schedule' && vars.STAGING_BACKUPS_ENABLED == 'true' && (github.event.schedule == '17 18 * * *' || github.event.schedule == '47 18 * * 0'))
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging' && (inputs.operation == 'verify' || inputs.operation == 'capture-restore' || inputs.operation == 'check')
     environment: staging-operations
     runs-on: ubuntu-24.04
     timeout-minutes: 40
@@ -104,7 +119,7 @@ jobs:
       - run: npm ci
       - run: npm run ops:install-restic
       - name: Install isolated image-decoding test browser
-        if: inputs.operation == 'capture-restore' || github.event.schedule == '17 18 * * *'
+        if: inputs.operation == 'capture-restore'
         run: npx playwright install --with-deps chromium
       - name: Recheck current dependency evidence after protected review
         run: npm run qa:dependencies
@@ -113,7 +128,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Verify staging and vault, or capture and restore the exact encrypted bundle
-        if: inputs.operation == 'verify' || inputs.operation == 'capture-restore' || github.event.schedule == '17 18 * * *'
+        if: inputs.operation == 'verify' || inputs.operation == 'capture-restore'
         run: |
           if [ "$OPS_OPERATION" = "verify" ]; then
             npm run ops:verify
@@ -127,7 +142,7 @@ jobs:
           OPS_PROJECT_REF: niocptgzzbozpbfzifdk
           OPS_CONFIRM: niocptgzzbozpbfzifdk:backup
           OPS_RESTORE_CONFIRM: niocptgzzbozpbfzifdk:isolated-synthetic-restore
-          OPS_SCHEDULED_CONFIRM: ${{ github.event_name == 'schedule' && 'staging-synthetic-only' || '' }}
+          OPS_SCHEDULED_CONFIRM: ${{ inputs.schedule_run_id != '' && 'staging-synthetic-only' || '' }}
           OPS_DATABASE_URL: ${{ secrets.OPS_DATABASE_URL }}
           OPS_SERVICE_ROLE_KEY: ${{ secrets.OPS_SERVICE_ROLE_KEY }}
           OPS_RESTIC_BINARY: ${{ github.workspace }}/.qa/tools/restic-0.19.1/restic
@@ -137,7 +152,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ vars.BACKUP_REGION }}
       - name: Read and verify every encrypted repository block
-        if: inputs.operation == 'check' || github.event.schedule == '47 18 * * 0'
+        if: inputs.operation == 'check'
         run: npm run ops:check
         env:
           OPS_ENV: staging
@@ -153,7 +168,7 @@ jobs:
       # environment dumps, SQL export files, or credential-bearing artifacts.
 
   monitoring:
-    if: (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging' && inputs.operation == 'monitor') || (github.event_name == 'schedule' && github.event.schedule == '*/15 * * * *' && vars.STAGING_MONITORING_ENABLED == 'true')
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging' && inputs.operation == 'monitor'
     environment: staging-operations
     runs-on: ubuntu-24.04
     timeout-minutes: 15

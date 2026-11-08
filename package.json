@@ -59,6 +59,11 @@
     "react-dom": "19.2.8",
     "zod": "4.6.7"
   },
+  "overrides": {
+    "@typescript-eslint/typescript-estree@8.68.0": {
+      "minimatch": "11.0.4"
+    }
+  },
   "devDependencies": {
     "axe-core": "4.13.0",
     "@electric-sql/pglite": "^0.5.8",

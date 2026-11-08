@@ -1,0 +1,40 @@
+name: Queue reviewed staging operations
+
+# Register only this file and scripts/operations/schedule.mjs on main.
+# This is not an application release, backup, approval or credential-bearing job.
+on:
+  schedule:
+    - cron: "17 18 * * *" # 02:17 Asia/Manila; GitHub may delay cron delivery
+    - cron: "47 18 * * 0" # Weekly encrypted repository integrity check
+    - cron: "*/15 * * * *" # Gated off until monitoring and inbox delivery pass
+
+permissions: {}
+
+concurrency:
+  group: queue-staging-operations
+  cancel-in-progress: false
+
+jobs:
+  queue:
+    if: github.repository == 'justinedupa2005/uc-marketplace' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write # Only dispatches the fixed staging QA workflow; no PAT
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "22"
+      - name: Queue staging CI and required owner review, never approve or deploy
+        run: node scripts/operations/schedule.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAGING_BACKUPS_ENABLED: ${{ vars.STAGING_BACKUPS_ENABLED }}
+          STAGING_MONITORING_ENABLED: ${{ vars.STAGING_MONITORING_ENABLED }}
+          STAGING_ALERTS_ENABLED: ${{ vars.STAGING_ALERTS_ENABLED }}
+          STAGING_ALERT_DELIVERY_CONFIRMED: ${{ vars.STAGING_ALERT_DELIVERY_CONFIRMED }}

@@ -30,10 +30,10 @@ const snapshot = (component, time, value = sha) => ({ id: value, hostname: "uc-m
 test("operations reject production, wrong project refs and implicit targets", () => {
   assert.equal(validateTarget(env), registry.staging);
   for (const value of [{}, { ...env, OPS_ENV: "production" }, { ...env, OPS_PROJECT_REF: registry.production.supabaseProjectRef }]) assert.throws(() => validateTarget(value));
-  assert.equal(policy.production.enabled, false); assert.equal(policy.staging.enabled, false);
+  assert.equal(policy.production.enabled, false); assert.equal(policy.staging.enabled, true);
 });
 
-test("approved manual synthetic capture does not activate scheduling, real-data retention, monitoring or deletion", () => {
+test("approved staging scheduling policy preserves synthetic scope, owner review, and disabled monitoring/deletion", () => {
   assert.equal(policy.staging.owner, "Justine T. Dupa");
   assert.equal(policy.staging.deputy, null);
   assert.equal(policy.staging.ownershipModel, "solo-maintainer");
@@ -63,7 +63,7 @@ test("approved manual synthetic capture does not activate scheduling, real-data 
   assert.throws(() => validateBackupPolicy(configured, { ...selected, syntheticPolicyApproval: { ...selected.syntheticPolicyApproval, sourceAttestedSyntheticOnly: false } }));
 });
 
-test("operations plan reports scoped approval without claiming activation or an operational backup", async () => {
+test("operations plan reports scoped scheduling policy, not an external activation or completed backup", async () => {
   const report = JSON.parse((await command(process.execPath, ["scripts/operations/backup.mjs", "plan"])).toString());
   assert.equal(report.ownerConfigured, true);
   assert.equal(report.repositoryUrlConfigured, true);
@@ -78,7 +78,8 @@ test("operations plan reports scoped approval without claiming activation or an 
   assert.equal(report.manualBackupEnabled, true);
   assert.equal(report.activationApproved, true);
   assert.equal(report.retentionApproved, true);
-  for (const field of ["backupEnabled", "monitoringEnabled", "deletionApproved", "productionEnabled", "credentialsPrinted"]) {
+  assert.equal(report.backupEnabled, true);
+  for (const field of ["monitoringEnabled", "deletionApproved", "productionEnabled", "credentialsPrinted"]) {
     assert.equal(report[field], false);
   }
 });
