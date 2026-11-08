@@ -39,6 +39,8 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
+      - name: Generate Next route and layout types before the existing compiler check
+        run: npx --no-install next typegen
       - run: npm run check
       - run: npm run test:db
       - run: npm run audit:production
