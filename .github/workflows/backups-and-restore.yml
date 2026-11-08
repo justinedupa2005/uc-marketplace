@@ -135,6 +135,9 @@ jobs:
           else
             npm run ops:cycle
           fi
+          if [ "$OPS_OPERATION" = "capture-restore" ]; then
+            npm run ops:retention:plan
+          fi
         env:
           OPS_OPERATION: ${{ inputs.operation }}
           OPS_ENV: staging
@@ -153,7 +156,9 @@ jobs:
           AWS_DEFAULT_REGION: ${{ vars.BACKUP_REGION }}
       - name: Read and verify every encrypted repository block
         if: inputs.operation == 'check'
-        run: npm run ops:check
+        run: |
+          npm run ops:check
+          npm run ops:retention:plan
         env:
           OPS_ENV: staging
           OPS_DATA_SCOPE: synthetic-only

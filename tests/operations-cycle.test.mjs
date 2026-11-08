@@ -248,3 +248,12 @@ test("protected operation jobs re-audit after review and installation, before re
     assert.doesNotMatch(job, /continue-on-error: true/);
   }
 });
+
+test("daily recovery and weekly integrity jobs report expired snapshots without deletion authorization", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/backups-and-restore.yml", import.meta.url), "utf8");
+  const job = workflow.slice(workflow.indexOf("\n  encrypted-backup:"), workflow.indexOf("\n  monitoring:"));
+  assert.match(job, /if \[ "\$OPS_OPERATION" = "capture-restore" \]; then\s+npm run ops:retention:plan/);
+  assert.match(job, /npm run ops:check\s+npm run ops:retention:plan/);
+  assert.doesNotMatch(job, /retention:apply|OPS_PRUNE_CONFIRM|--prune/);
+  assert.equal(policy.staging.syntheticPolicyApproval.deletionApproved, false);
+});
