@@ -58,9 +58,11 @@ Activation sequence:
    before the monitoring scheduler can queue it.
 
 The approved seven-day retention target remains unchanged. **Expiry deletion and
-pruning are not authorized or automatically scheduled**; report expired snapshots
-using `ops:retention:plan`, obtain explicit scoped deletion approval, and do not
-claim retention cleanup is operational until it is tested. Current staging data is
+pruning remain disabled by the owner's November 8 choice**. Daily successful
+capture/recovery and weekly integrity jobs run `ops:retention:plan`, which checks
+the pinned vault and uses Restic's dry run to report only an expired-snapshot count
+and `deleted: false`. No prune confirmation or apply command is configured. Do not
+claim seven-day deletion is operational. Current staging data is
 synthetic only; never use this exception for real student verification documents.
 Required owner reviews make these attended schedules, not unattended coverage.
 [GitHub workflow triggering](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
