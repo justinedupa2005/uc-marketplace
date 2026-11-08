@@ -5,7 +5,67 @@ Production stays deployment-disabled and every hosted operations command current
 accepts only registered staging. Do not change the environment registry to bypass
 that restriction. No hosted database has been restored or reset.
 
-## Continuation checkpoint: 2026-11-07
+## Current recovery and activation status
+
+### Successful hosted recovery and scheduling preparation: 2026-11-08
+
+Protected [run 42387130684](https://github.com/justinedupa2005/uc-marketplace/actions/runs/42387130684)
+passed on exact staging source `134feada3a9f91fa97a531dbbd8448ca6ed155ab`.
+The receipt confirms database recovery, **15 separate Storage files**, **139
+catalog assertions**, three restored-access checks, decoded image and verified
+cleanup. Isolated recovery took 11 seconds. No production changes or alerts ran.
+The encrypted bundle is `a0be18064c74c301ee1c6f700a0fa836451e4e7821ee343b95fbcc38796724de`;
+its restoration proof is `3d6574987de416fa4ed2f0ac2f1c39d9c89f0909eee64b570b49d8e6bf5c8029`.
+These are opaque snapshot identifiers, not repository credentials. Earlier failed
+checkpoints below are retained as history, not the current recovery result.
+
+The dependency exception expired unchanged. A reviewed consumer-specific override
+replaces only `@typescript-eslint/typescript-estree@8.68.0`'s minimatch with
+11.0.4; legacy callable minimatch consumers remain on 3.1.5. Fresh full and
+production audits report zero findings and no deferral. See the dependency guide.
+
+The staging policy permits schedule preparation, but the external activation
+gate stays **off until a fresh exact-source recovery proof exists for the new
+commit**. GitHub cron only runs from the default branch. Do not merge staging
+application code to main, change the default branch, or admit main to the protected
+environment to work around that limitation. Instead register only these two files
+on main through an operations-only reviewed PR:
+
+- `.github/workflows/staging-operations-schedule.yml`
+- `scripts/operations/schedule.mjs`
+
+The main scheduler has only a short-lived Actions token (contents read/actions
+write), no environment, npm install or hosted credentials. It dispatches the fixed
+QA workflow on staging with its parent cron run ID. The child runs normal CI,
+waits for the existing staging-operations reviewer, then rechecks staging push CI,
+parent provenance, dependency security and activation before credential access.
+The daily capture still requires a recent successful recovery proof for the exact
+reviewed source. No automatic approval, production workflow or app deployment is
+introduced. A queued scheduler run is not a completed backup.
+
+Activation sequence:
+
+1. Merge the staging changes through green CI, then manually run `capture-restore`
+   and approve staging-operations. Confirm the new encrypted restoration receipt.
+2. Register the two-file scheduler on main without promoting application code.
+3. Set repository variable `STAGING_BACKUPS_ENABLED=true` only after step 1. Keep
+   any environment override consistent. The configured cron `17 18 * * *` is
+   **02:17 Asia/Manila**; GitHub may delay delivery. Approve the queued staging job
+   and record its parent run, child run, exact source and actual recovery receipt.
+4. Monitoring remains separately off until least-privilege credentials, a healthy
+   read-only collection and a Brevo test with recipient inbox confirmation exist.
+   Both `STAGING_ALERTS_ENABLED` and `STAGING_ALERT_DELIVERY_CONFIRMED` must be true
+   before the monitoring scheduler can queue it.
+
+The approved seven-day retention target remains unchanged. **Expiry deletion and
+pruning are not authorized or automatically scheduled**; report expired snapshots
+using `ops:retention:plan`, obtain explicit scoped deletion approval, and do not
+claim retention cleanup is operational until it is tested. Current staging data is
+synthetic only; never use this exception for real student verification documents.
+Required owner reviews make these attended schedules, not unattended coverage.
+[GitHub workflow triggering](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+
+## Historical continuation checkpoint: 2026-11-07
 
 The subsequent protected run reached `restore-fingerprints`: container startup
 and archive restoration succeeded. Read-only staging metadata identified an ICU
@@ -62,7 +122,7 @@ The audited eight-node development-only graph is a strict reduction of the
 original approved graph, with no production findings. Its separately pinned
 evidence profile keeps the **original November 8, 00:00 Asia/Manila expiry**;
 it does not renew approval or change dependencies. See the [current dependency
-review](ci-dependency-security.md#current-evidence-refinement-2026-11-07).
+review](ci-dependency-security.md#historical-evidence-refinement-2026-11-07).
 
 The existing five backup secrets and manual staging-operations review remain
 configured. Brevo and hosted monitoring credentials are still absent. No

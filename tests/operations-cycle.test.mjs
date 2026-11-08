@@ -166,9 +166,11 @@ test("manual vault operations are independent of daily scheduling and retain sta
   const workflow = await readFile(new URL("../.github/workflows/backups-and-restore.yml", import.meta.url), "utf8");
   const job = workflow.slice(workflow.indexOf("\n  encrypted-backup:"), workflow.indexOf("\n  monitoring:"));
   const condition = job.split("\n").find(line => line.trimStart().startsWith("if:"));
-  const manual = condition.split("|| (github.event_name == 'schedule'")[0];
+  const manual = condition;
   assert.ok(manual.includes("workflow_dispatch") && manual.includes("capture-restore") && !manual.includes("STAGING_BACKUPS_ENABLED"));
-  assert.ok(condition.includes("vars.STAGING_BACKUPS_ENABLED == 'true'"));
+  assert.ok(!condition.includes("github.event_name == 'schedule'"));
+  assert.match(workflow, /OPS_SCHEDULE_RUN_ID: \$\{\{ inputs\.schedule_run_id \}\}/);
+  assert.match(job, /OPS_SCHEDULED_CONFIRM: \$\{\{ inputs\.schedule_run_id != ''/);
   assert.match(job, /environment: staging-operations/);
   assert.equal((job.match(/node scripts\/operations\/verify-source\.mjs/g) ?? []).length, 2);
   assert.match(job, /OPS_DATA_SCOPE: synthetic-only/); assert.match(job, /npm run ops:cycle/);

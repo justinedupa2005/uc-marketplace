@@ -1,7 +1,7 @@
 {
   "version": 1,
   "staging": {
-    "enabled": false,
+    "enabled": true,
     "manualBackupEnabled": true,
     "dataScope": "synthetic-only",
     "provider": "backblaze-b2",

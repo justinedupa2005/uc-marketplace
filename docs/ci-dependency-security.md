@@ -1,6 +1,28 @@
 # Step 2: CI and dependency security
 
-## Current evidence refinement: 2026-11-07
+## Current remediation: 2026-11-08
+
+The November 1 development-only minimatch exception expired at its original
+November 8 00:00 Asia/Manila boundary; it was not renewed. Fresh audits before
+remediation reported eight moderate development findings and no production
+findings. Current upstream TypeScript ESLint still requests minimatch 10 and npm's
+automatic remedy proposes a Next lint-config downgrade. Neither was accepted.
+
+A narrowly reviewed override pins **only** the `@typescript-eslint/typescript-estree@8.68.0`
+consumer to **minimatch 11.0.4**. This major removes the old RegExp/AST interfaces,
+but this consumer uses only `minimatch(filename, pattern, { dot: true })`, which is
+retained. Node 22 used in CI satisfies its Node 20 or >=22 engine requirement.
+Legacy callable v3 consumers are not overridden. Regression tests exercise the
+actual TypeScript project-service/default-project path, named matcher semantics,
+legacy exports and all locked minimatch versions. The override is exact-consumer
+scoped: reconsider it when that upstream consumer version changes.
+
+Fresh `npm run qa:dependencies` reports `status: passed`, zero production findings
+and zero deferred development packages. Historical exception files/tests remain
+unchanged as evidence, not a fallback. Every new finding still fails the gate.
+[Upstream advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+
+## Historical evidence refinement: 2026-11-07
 
 The fresh staging recovery launcher
 [42334862497](https://github.com/justinedupa2005/uc-marketplace/actions/runs/42334862497)
